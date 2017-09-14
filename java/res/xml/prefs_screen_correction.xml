@@ -57,7 +57,6 @@
         android:key="pref_key_use_personalized_dicts"
         android:title="@string/use_personalized_dicts"
         android:summary="@string/use_personalized_dicts_summary"
-        android:defaultValue="true"
         android:persistent="true" />
     <CheckBoxPreference
         android:key="pref_key_use_contacts_dict"
