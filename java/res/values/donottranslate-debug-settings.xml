@@ -19,7 +19,7 @@
 -->
 <resources xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2">
     <!-- Title for Android keyboard debug settings activity / dialog -->
-    <string name="english_ime_debug_settings">Android Keyboard Debug settings</string>
+    <string name="english_ime_debug_settings">GrapheneOS Keyboard Debug settings</string>
     <string name="prefs_debug_mode">Debug Mode</string>
     <string name="prefs_force_non_distinct_multitouch">Force non-distinct multitouch</string>
     <string name="prefs_should_show_lxx_suggestion_ui">Show LXX suggestion UI</string>
