@@ -352,9 +352,11 @@ mobile devices. [CHAR LIMIT=25] -->
     <!-- The keyboard theme name, Holo Blue. This is marked as translatable="false" because this is a proper name of system-wide UI Theme.  -->
     <string name="keyboard_theme_holo_blue" translatable="false">Holo Blue</string>
     <!-- The keyboard theme name, Material Dark. This is marked as translatable="false" because this is a proper name of system-wide UI Theme.  -->
-    <string name="keyboard_theme_material_dark" translatable="false">Material Dark</string>
+    <string name="keyboard_theme_material_dark" translatable="false">Old Material Dark</string>
     <!-- The keyboard theme name, Material Light. This is marked as translatable="false" because this is a proper name of system-wide UI Theme.  -->
-    <string name="keyboard_theme_material_light" translatable="false">Material Light</string>
+    <string name="keyboard_theme_material_light" translatable="false">Old Material Light</string>
+    <!-- The keyboard theme name, Material You. This is marked as translatable="false" because this is a proper name of system-wide UI Theme. -->
+    <string name="keyboard_theme_material_you" translatable="false">Material You</string>
 
     <!-- Title of the preference settings for custom input styles (language and keyboard layout pairs) [CHAR LIMIT=35]-->
     <string name="custom_input_styles_title">Custom input styles</string>
@@ -578,5 +580,5 @@ Tip: You can download and remove dictionaries by going to &lt;b>Languages&#160;&
     <!-- This resource is corresponding to msgid="5433275485499039199" -->
     <string name="user_dict_fast_scroll_alphabet">\u0020ABCDEFGHIJKLMNOPQRSTUVWXYZ</string>
 
-    <string name="keyboard_theme_follow_system">Follow system settings</string>
+    <string name="keyboard_theme_material_follow_system">Old Material - Follow system settings</string>
 </resources>
