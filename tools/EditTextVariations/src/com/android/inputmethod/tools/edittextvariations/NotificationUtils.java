@@ -80,7 +80,7 @@ final class NotificationUtils {
         final int notificationId = sNextNotificationId.getAndIncrement();
         final PendingIntent pendingIntent = getReplyPendingIntent(context, notificationId);
         final PendingIntent activityIntent = PendingIntent.getActivity(context, 0,
-                new Intent(context, EditorActivity.class), 0);
+                new Intent(context, EditorActivity.class), PendingIntent.FLAG_IMMUTABLE);
         final Notification.Action action =
                 new Notification.Action.Builder(null, "Direct Reply Test", pendingIntent)
                         .addRemoteInput(remoteInput)
@@ -120,6 +120,6 @@ final class NotificationUtils {
         // Pass notificationId as the result code to get a new PendingIntent rather than an existing
         // one.
         return PendingIntent.getBroadcast(context.getApplicationContext(), notificationId, intent,
-                PendingIntent.FLAG_ONE_SHOT);
+                PendingIntent.FLAG_ONE_SHOT | PendingIntent.FLAG_IMMUTABLE);
     }
 }
