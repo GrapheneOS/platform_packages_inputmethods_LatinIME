@@ -16,11 +16,15 @@
 
 package com.android.inputmethod.latin.spellcheck;
 
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.preference.PreferenceManager;
 import android.service.textservice.SpellCheckerService;
 import android.text.InputType;
+import android.util.Log;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodSubtype;
 import android.view.textservice.SuggestionsInfo;
@@ -32,14 +36,19 @@ import com.android.inputmethod.latin.DictionaryFacilitator;
 import com.android.inputmethod.latin.DictionaryFacilitatorLruCache;
 import com.android.inputmethod.latin.NgramContext;
 import com.android.inputmethod.latin.R;
+import com.android.inputmethod.latin.RichInputMethodManager;
 import com.android.inputmethod.latin.RichInputMethodSubtype;
 import com.android.inputmethod.latin.SuggestedWords;
 import com.android.inputmethod.latin.common.ComposedData;
+import com.android.inputmethod.latin.common.LocaleUtils;
+import com.android.inputmethod.latin.common.StringUtils;
 import com.android.inputmethod.latin.settings.SettingsValuesForSuggestion;
 import com.android.inputmethod.latin.utils.AdditionalSubtypeUtils;
 import com.android.inputmethod.latin.utils.ScriptUtils;
 import com.android.inputmethod.latin.utils.SuggestionResults;
 
+import java.util.Arrays;
+import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -83,6 +92,11 @@ public final class AndroidSpellCheckerService extends SpellCheckerService
     public static final String SINGLE_QUOTE = "\u0027";
     public static final String APOSTROPHE = "\u2019";
 
+    // guarded by mSemaphore
+    private Locale[] mEnabledLocales;
+    // guarded by mSemaphore
+    private DictionaryFacilitatorLruCache[] mDictionaryFacilitators;
+
     public AndroidSpellCheckerService() {
         super();
         for (int i = 0; i < MAX_NUM_OF_THREADS_READ_DICTIONARY; i++) {
@@ -93,11 +107,87 @@ public final class AndroidSpellCheckerService extends SpellCheckerService
     @Override
     public void onCreate() {
         super.onCreate();
+
+        Locale[] enabledLocales = fetchEnabledLocales();
+        mEnabledLocales = enabledLocales;
+        mDictionaryFacilitators = createDictionaryFacilitators(enabledLocales);
+
+        registerReceiver(checkLocalesReceiver, new IntentFilter(CHECK_ENABLED_LOCALES_BROADCAST), Context.RECEIVER_NOT_EXPORTED);
+
         mRecommendedThreshold = Float.parseFloat(
                 getString(R.string.spellchecker_recommended_threshold_value));
         final SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
         prefs.registerOnSharedPreferenceChangeListener(this);
         onSharedPreferenceChanged(prefs, PREF_USE_CONTACTS_KEY);
+    }
+
+    static Locale[] fetchEnabledLocales() {
+        var rimm = RichInputMethodManager.getInstance();
+        List<InputMethodSubtype> enabledSubtypes = rimm.getMyEnabledInputMethodSubtypeList(true);
+
+        int numLocales = enabledSubtypes.size();
+        Locale[] res = new Locale[numLocales];
+
+        for (int i = 0; i < numLocales; ++i) {
+            InputMethodSubtype subtype = enabledSubtypes.get(i);
+            Locale locale = LocaleUtils.constructLocaleFromString(subtype.getLocale());
+            res[i] = locale;
+        }
+        return res;
+    }
+
+    DictionaryFacilitatorLruCache[] createDictionaryFacilitators(Locale[] locales) {
+        int numLocales = locales.length;
+        var dictionaryCaches = new DictionaryFacilitatorLruCache[numLocales];
+        var sb = new StringBuilder();
+
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
+        boolean useContactsDict = prefs.getBoolean(PREF_USE_CONTACTS_KEY, true);
+
+        for (int i = 0; i < numLocales; ++i) {
+            Locale locale = locales[i];
+            var c = new DictionaryFacilitatorLruCache(this, DICTIONARY_NAME_PREFIX);
+            c.setUseContactsDictionary(useContactsDict);
+            dictionaryCaches[i] = c;
+
+            if (i != 0) {
+                sb.append(", ");
+            }
+            sb.append(locale);
+        }
+        Log.d(TAG, "created dictionary caches for: " + sb);
+        return dictionaryCaches;
+    }
+
+    public static final String CHECK_ENABLED_LOCALES_BROADCAST = AndroidSpellCheckerService.class.getName()
+            + ".CHECK_LOCALES_BROADCAST";
+
+    private BroadcastReceiver checkLocalesReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            Locale[] enabledLocaled = fetchEnabledLocales();
+
+            if (!Arrays.deepEquals(enabledLocaled, mEnabledLocales)) {
+                Log.d(TAG, "list of enabled locales changed");
+
+                mSemaphore.acquireUninterruptibly(MAX_NUM_OF_THREADS_READ_DICTIONARY);
+                try {
+                    for (DictionaryFacilitatorLruCache c : mDictionaryFacilitators) {
+                        c.closeDictionaries();
+                    }
+                    mEnabledLocales = enabledLocaled;
+                    mDictionaryFacilitators = createDictionaryFacilitators(enabledLocaled);
+                } finally {
+                    mSemaphore.release(MAX_NUM_OF_THREADS_READ_DICTIONARY);
+                }
+            }
+        }
+    };
+
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+        unregisterReceiver(checkLocalesReceiver);
     }
 
     public float getRecommendedThreshold() {
@@ -128,7 +218,17 @@ public final class AndroidSpellCheckerService extends SpellCheckerService
     public void onSharedPreferenceChanged(final SharedPreferences prefs, final String key) {
         if (!PREF_USE_CONTACTS_KEY.equals(key)) return;
         final boolean useContactsDictionary = prefs.getBoolean(PREF_USE_CONTACTS_KEY, true);
-        mDictionaryFacilitatorCache.setUseContactsDictionary(useContactsDictionary);
+
+        mSemaphore.acquireUninterruptibly(MAX_NUM_OF_THREADS_READ_DICTIONARY);
+        try {
+            mDictionaryFacilitatorCache.setUseContactsDictionary(useContactsDictionary);
+
+            for (DictionaryFacilitatorLruCache c : mDictionaryFacilitators) {
+                c.setUseContactsDictionary(useContactsDictionary);
+            }
+        } finally {
+            mSemaphore.release(MAX_NUM_OF_THREADS_READ_DICTIONARY);
+        }
     }
 
     @Override
@@ -168,6 +268,56 @@ public final class AndroidSpellCheckerService extends SpellCheckerService
         }
     }
 
+    private static final String MLSC_TAG = "MultiLocaleSpellCheck";
+    private static final boolean MLSC_LOG = Log.isLoggable(MLSC_TAG, Log.VERBOSE);
+
+    public boolean isValidWordInEnabledLocalesForAnyCapitalization(final String text, final int capitalizeType) {
+        mSemaphore.acquireUninterruptibly();
+        Locale[] locales = mEnabledLocales;
+        try {
+            for (int i = 0; i < locales.length; ++i) {
+                Locale locale = locales[i];
+                DictionaryFacilitator dictionary = mDictionaryFacilitators[i].get(locale);
+                if (isValidWordInLocaleForAnyCapitalization(locale, dictionary, text, capitalizeType)) {
+                    if (MLSC_LOG) {
+                        Log.d(MLSC_TAG, text + " | valid in " + locale + " locale");
+                    }
+                    return true;
+                }
+            }
+            if (MLSC_LOG) {
+                Log.d(MLSC_TAG, text + " | invalid in all enabled locales");
+            }
+            return false;
+        } finally {
+            mSemaphore.release();
+        }
+    }
+
+    private static boolean isValidWordInLocaleForAnyCapitalization(
+            final Locale locale, final DictionaryFacilitator dictionary,
+            final String text, final int capitalizeType)
+    {
+        // inlined from AndroidWordLevelSpellCheckerSession#isInDictForAnyCapitalization
+
+        // If the word is in there as is, then it's in the dictionary. If not, we'll test lower
+        // case versions, but only if the word is not already all-lower case or mixed case.
+        if (dictionary.isValidSpellingWord(text)) return true;
+        if (StringUtils.CAPITALIZE_NONE == capitalizeType) return false;
+
+        // If we come here, we have a capitalized word (either First- or All-).
+        // Downcase the word and look it up again. If the word is only capitalized, we
+        // tested all possibilities, so if it's still negative we can return false.
+        final String lowerCaseText = text.toLowerCase(locale);
+        if (dictionary.isValidSpellingWord(lowerCaseText)) return true;
+        if (StringUtils.CAPITALIZE_FIRST == capitalizeType) return false;
+
+        // If the lower case version is not in the dictionary, it's still possible
+        // that we have an all-caps version of a word that needs to be capitalized
+        // according to the dictionary. E.g. "GERMANS" only exists in the dictionary as "Germans".
+        return dictionary.isValidSpellingWord(StringUtils.capitalizeFirstAndDowncaseRest(lowerCaseText, locale));
+    }
+
     public SuggestionResults getSuggestionResults(final Locale locale,
             final ComposedData composedData, final NgramContext ngramContext,
             @Nonnull final Keyboard keyboard) {
@@ -204,6 +354,9 @@ public final class AndroidSpellCheckerService extends SpellCheckerService
         mSemaphore.acquireUninterruptibly(MAX_NUM_OF_THREADS_READ_DICTIONARY);
         try {
             mDictionaryFacilitatorCache.closeDictionaries();
+            for (DictionaryFacilitatorLruCache c : mDictionaryFacilitators) {
+                c.closeDictionaries();
+            }
         } finally {
             mSemaphore.release(MAX_NUM_OF_THREADS_READ_DICTIONARY);
         }
