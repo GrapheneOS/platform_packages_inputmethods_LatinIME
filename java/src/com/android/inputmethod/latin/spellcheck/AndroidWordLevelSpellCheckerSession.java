@@ -192,20 +192,20 @@ public abstract class AndroidWordLevelSpellCheckerSession extends Session {
     private boolean isInDictForAnyCapitalization(final String text, final int capitalizeType) {
         // If the word is in there as is, then it's in the dictionary. If not, we'll test lower
         // case versions, but only if the word is not already all-lower case or mixed case.
-        if (mService.isValidWordInActiveLocales(text)) return true;
+        if (mService.isValidWord(mLocale, text)) return true;
         if (StringUtils.CAPITALIZE_NONE == capitalizeType) return false;
 
         // If we come here, we have a capitalized word (either First- or All-).
         // Downcase the word and look it up again. If the word is only capitalized, we
         // tested all possibilities, so if it's still negative we can return false.
         final String lowerCaseText = text.toLowerCase(mLocale);
-        if (mService.isValidWordInActiveLocales(lowerCaseText)) return true;
+        if (mService.isValidWord(mLocale, lowerCaseText)) return true;
         if (StringUtils.CAPITALIZE_FIRST == capitalizeType) return false;
 
         // If the lower case version is not in the dictionary, it's still possible
         // that we have an all-caps version of a word that needs to be capitalized
         // according to the dictionary. E.g. "GERMANS" only exists in the dictionary as "Germans".
-        return mService.isValidWordInActiveLocales(
+        return mService.isValidWord(mLocale,
                 StringUtils.capitalizeFirstAndDowncaseRest(lowerCaseText, mLocale));
     }
 
@@ -247,8 +247,8 @@ public abstract class AndroidWordLevelSpellCheckerSession extends Session {
                     // Validate all words on both sides of periods,
                     // skip empty tokens due to periods at first/last index
                     for (final String word : splitText) {
-                        if (!word.isEmpty() && !mService.isValidWordInActiveLocales(word) &&
-                                !mService.isValidWordInActiveLocales(word.toLowerCase(mLocale))) {
+                        if (!word.isEmpty() && !mService.isValidWord(mLocale, word) &&
+                                !mService.isValidWord(mLocale, word.toLowerCase(mLocale))) {
                             allWordsAreValid = false;
                             break;
                         }
@@ -260,7 +260,7 @@ public abstract class AndroidWordLevelSpellCheckerSession extends Session {
                                         TextUtils.join(Constants.STRING_SPACE, splitText) });
                     }
                 }
-                return mService.isValidWordInActiveLocales(text) ?
+                return mService.isValidWord(mLocale, text) ?
                         AndroidSpellCheckerService.getInDictEmptySuggestions() :
                         AndroidSpellCheckerService.getNotInDictEmptySuggestions(
                                 !periodOnlyAtLastIndex);

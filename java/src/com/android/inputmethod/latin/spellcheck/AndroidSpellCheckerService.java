@@ -18,7 +18,6 @@ package com.android.inputmethod.latin.spellcheck;
 
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.os.LocaleList;
 import android.preference.PreferenceManager;
 import android.service.textservice.SpellCheckerService;
 import android.text.InputType;
@@ -164,24 +163,6 @@ public final class AndroidSpellCheckerService extends SpellCheckerService
             DictionaryFacilitator dictionaryFacilitatorForLocale =
                     mDictionaryFacilitatorCache.get(locale);
             return dictionaryFacilitatorForLocale.isValidSpellingWord(word);
-        } finally {
-            mSemaphore.release();
-        }
-    }
-
-    private final LocaleList activeLocaleList = LocaleList.getDefault();
-    public boolean isValidWordInActiveLocales(final String word) {
-        mSemaphore.acquireUninterruptibly();
-        try {
-            for (int index = 0; index < activeLocaleList.size(); index++) {
-                Locale locale = activeLocaleList.get(index);
-                DictionaryFacilitator dictionaryFacilitatorForLocale =
-                        mDictionaryFacilitatorCache.get(locale);
-                if (dictionaryFacilitatorForLocale.isValidSpellingWord(word)) {
-                    return true;
-                }
-            }
-            return false;
         } finally {
             mSemaphore.release();
         }
