@@ -87,6 +87,7 @@ import com.android.inputmethod.latin.personalization.PersonalizationHelper;
 import com.android.inputmethod.latin.settings.Settings;
 import com.android.inputmethod.latin.settings.SettingsActivity;
 import com.android.inputmethod.latin.settings.SettingsValues;
+import com.android.inputmethod.latin.spellcheck.AndroidSpellCheckerService;
 import com.android.inputmethod.latin.suggestions.SuggestionStripView;
 import com.android.inputmethod.latin.suggestions.SuggestionStripViewAccessor;
 import com.android.inputmethod.latin.touchinputconsumer.GestureConsumer;
@@ -739,6 +740,11 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
                     settingsValues.mAutoCorrectionThreshold);
         }
         mInputLogic.mSuggest.setPlausibilityThreshold(settingsValues.mPlausibilityThreshold);
+
+        var intent = new Intent(AndroidSpellCheckerService.CHECK_ENABLED_LOCALES_BROADCAST);
+        intent.setPackage(getPackageName());
+        // notify AndroidSpellCheckerService that enabled locales might have changed
+        sendBroadcast(intent);
     }
 
     /**
