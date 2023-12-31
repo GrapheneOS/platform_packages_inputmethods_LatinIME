@@ -121,7 +121,11 @@ public final class AndroidSpellCheckerService extends SpellCheckerService
         onSharedPreferenceChanged(prefs, PREF_USE_CONTACTS_KEY);
     }
 
-    static Locale[] fetchEnabledLocales() {
+    Locale[] fetchEnabledLocales() {
+        // RichInputMethodManager is not initialized during process init, instead each of its
+        // callers is supposed to call RichInputMethodManager.init(), which is a no-op if
+        // RichInputMethodManager was already inited by some other caller
+        RichInputMethodManager.init(this);
         var rimm = RichInputMethodManager.getInstance();
         List<InputMethodSubtype> enabledSubtypes = rimm.getMyEnabledInputMethodSubtypeList(true);
 
