@@ -40,7 +40,7 @@ TEST(Utf8UtilsTests, TestGetCodePoints) {
         EXPECT_EQ('t', codePoints[3]);
     }
     {
-        const std::vector<int> codePoints = Utf8Utils::getCodePoints(u8"\u3042a\u03C2\u0410");
+        const std::vector<int> codePoints = Utf8Utils::getCodePoints("\u3042a\u03C2\u0410");
         EXPECT_EQ(4u, codePoints.size());
         EXPECT_EQ(0x3042, codePoints[0]); // HIRAGANA LETTER A
         EXPECT_EQ('a', codePoints[1]);
@@ -48,7 +48,7 @@ TEST(Utf8UtilsTests, TestGetCodePoints) {
         EXPECT_EQ(0x0410, codePoints[3]); // GREEK SMALL LETTER FINAL SIGMA
     }
     {
-        const std::vector<int> codePoints = Utf8Utils::getCodePoints(u8"\U0001F36A?\U0001F752");
+        const std::vector<int> codePoints = Utf8Utils::getCodePoints("\U0001F36A?\U0001F752");
         EXPECT_EQ(3u, codePoints.size());
         EXPECT_EQ(0x1F36A, codePoints[0]); // COOKIE
         EXPECT_EQ('?', codePoints[1]);
@@ -75,7 +75,7 @@ TEST(Utf8UtilsTests, TestGetUtf8String) {
                 0x1F36A /* COOKIE */,
                 0x1F752 /* ALCHEMICAL SYMBOL FOR STARRED TRIDENT */
         };
-        EXPECT_EQ(u8"\u00E0\u03C2\u0430\u3042\U0001F36A\U0001F752",
+        EXPECT_EQ("\u00E0\u03C2\u0430\u3042\U0001F36A\U0001F752",
                 Utf8Utils::getUtf8String(CodePointArrayView(codePoints)));
     }
 }
