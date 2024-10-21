@@ -16,6 +16,7 @@
 
 package com.android.inputmethod.latin.utils;
 
+import android.content.Context;
 import android.content.res.Resources;
 import android.content.res.TypedArray;
 import android.os.Build;
@@ -23,6 +24,8 @@ import android.text.TextUtils;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.util.TypedValue;
+import android.view.Display;
+import android.view.DisplayCutout;
 
 import com.android.inputmethod.annotations.UsedForTesting;
 import com.android.inputmethod.latin.R;
@@ -182,9 +185,15 @@ public final class ResourceUtils {
         return matchedAll;
     }
 
-    public static int getDefaultKeyboardWidth(final Resources res) {
+    public static int getDefaultKeyboardWidth(final Resources res, final Context context) {
         final DisplayMetrics dm = res.getDisplayMetrics();
-        return dm.widthPixels;
+        int width = dm.widthPixels;
+        Display display = context.getDisplay();
+        DisplayCutout cutout = display.getCutout();
+        if (cutout != null) {
+            width -= cutout.getSafeInsetLeft() + cutout.getSafeInsetRight();
+        }
+        return width;
     }
 
     public static int getKeyboardHeight(final Resources res, final SettingsValues settingsValues) {
