@@ -26,6 +26,7 @@ import android.util.AttributeSet;
 import android.util.Log;
 import android.util.TypedValue;
 import android.util.Xml;
+import android.view.DisplayCutout;
 
 import com.android.inputmethod.annotations.UsedForTesting;
 import com.android.inputmethod.keyboard.Key;
@@ -253,6 +254,12 @@ public class KeyboardBuilder<KP extends KeyboardParams> {
                     R.styleable.Keyboard_keyboardLeftPadding, width, width, 0);
             params.mRightPadding = (int)keyboardAttr.getFraction(
                     R.styleable.Keyboard_keyboardRightPadding, width, width, 0);
+
+            DisplayCutout cutout = mContext.getDisplay().getCutout();
+            if (cutout != null) {
+                params.mLeftPadding += cutout.getSafeInsetLeft();
+                params.mRightPadding += cutout.getSafeInsetRight();
+            }
 
             final int baseWidth =
                     params.mOccupiedWidth - params.mLeftPadding - params.mRightPadding;
