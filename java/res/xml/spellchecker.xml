@@ -25,19 +25,11 @@
         android:settingsActivity="com.android.inputmethod.latin.spellcheck.SpellCheckerSettingsActivity">
     <subtype
             android:label="@string/subtype_generic"
-            android:subtypeLocale="en"
+            android:subtypeLocale="cs"
     />
     <subtype
             android:label="@string/subtype_generic"
-            android:subtypeLocale="en_US"
-    />
-    <subtype
-            android:label="@string/subtype_generic"
-            android:subtypeLocale="en_GB"
-    />
-    <subtype
-            android:label="@string/subtype_generic"
-            android:subtypeLocale="fr"
+            android:subtypeLocale="da"
     />
     <subtype
             android:label="@string/subtype_generic"
@@ -45,7 +37,19 @@
     />
     <subtype
             android:label="@string/subtype_generic"
-            android:subtypeLocale="it"
+            android:subtypeLocale="el"
+    />
+    <subtype
+            android:label="@string/subtype_generic"
+            android:subtypeLocale="en"
+    />
+    <subtype
+            android:label="@string/subtype_generic"
+            android:subtypeLocale="en_GB"
+    />
+    <subtype
+            android:label="@string/subtype_generic"
+            android:subtypeLocale="en_US"
     />
     <subtype
             android:label="@string/subtype_generic"
@@ -53,11 +57,35 @@
     />
     <subtype
             android:label="@string/subtype_generic"
-            android:subtypeLocale="ru"
+            android:subtypeLocale="fi"
     />
     <subtype
             android:label="@string/subtype_generic"
-            android:subtypeLocale="pt_BR"
+            android:subtypeLocale="fr"
+    />
+    <subtype
+            android:label="@string/subtype_generic"
+            android:subtypeLocale="hr"
+    />
+    <subtype
+            android:label="@string/subtype_generic"
+            android:subtypeLocale="it"
+    />
+    <subtype
+            android:label="@string/subtype_generic"
+            android:subtypeLocale="iw"
+    />
+    <subtype
+            android:label="@string/subtype_generic"
+            android:subtypeLocale="lt"
+    />
+    <subtype
+            android:label="@string/subtype_generic"
+            android:subtypeLocale="lv"
+    />
+    <subtype
+            android:label="@string/subtype_generic"
+            android:subtypeLocale="nb"
     />
     <subtype
             android:label="@string/subtype_generic"
@@ -65,6 +93,38 @@
     />
     <subtype
             android:label="@string/subtype_generic"
-            android:subtypeLocale="cs"
+            android:subtypeLocale="pl"
+    />
+    <subtype
+            android:label="@string/subtype_generic"
+            android:subtypeLocale="pt_BR"
+    />
+    <subtype
+            android:label="@string/subtype_generic"
+            android:subtypeLocale="pt_PT"
+    />
+    <subtype
+            android:label="@string/subtype_generic"
+            android:subtypeLocale="ro"
+    />
+    <subtype
+            android:label="@string/subtype_generic"
+            android:subtypeLocale="ru"
+    />
+    <subtype
+            android:label="@string/subtype_generic"
+            android:subtypeLocale="sl"
+    />
+    <subtype
+            android:label="@string/subtype_generic"
+            android:subtypeLocale="sr"
+    />
+    <subtype
+            android:label="@string/subtype_generic"
+            android:subtypeLocale="sv"
+    />
+    <subtype
+            android:label="@string/subtype_generic"
+            android:subtypeLocale="tr"
     />
 </spell-checker>
