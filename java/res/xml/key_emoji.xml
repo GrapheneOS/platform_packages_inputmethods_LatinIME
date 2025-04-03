@@ -22,13 +22,6 @@
     xmlns:latin="http://schemas.android.com/apk/res/com.android.inputmethod.latin"
 >
     <switch>
-        <case
-            latin:mode="email|url"
-        >
-            <Key
-                latin:keyStyle="comKeyStyle"
-                latin:keyWidth="10%p" />
-        </case>
         <default>
             <Key
                 latin:keyStyle="emojiKeyStyle"
