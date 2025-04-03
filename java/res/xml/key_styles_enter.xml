@@ -158,57 +158,49 @@
             latin:navigatePrevious="true"
         >
             <key-style
-                latin:styleName="navigateMoreKeysStyle"
-                latin:parentStyle="navigateEmojiPreviousMoreKeysStyle" />
+                latin:styleName="navigateMoreKeysStyle"/>
         </case>
         <case
             latin:imeAction="actionNext"
         >
             <key-style
-                latin:styleName="navigateMoreKeysStyle"
-                latin:parentStyle="navigateEmojiMoreKeysStyle" />
+                latin:styleName="navigateMoreKeysStyle"/>
         </case>
         <case
             latin:imeAction="actionPrevious"
             latin:navigateNext="true"
         >
             <key-style
-                latin:styleName="navigateMoreKeysStyle"
-                latin:parentStyle="navigateEmojiNextMoreKeysStyle" />
+                latin:styleName="navigateMoreKeysStyle" />
         </case>
         <case
             latin:imeAction="actionPrevious"
         >
             <key-style
-                latin:styleName="navigateMoreKeysStyle"
-                latin:parentStyle="navigateEmojiMoreKeysStyle" />
+                latin:styleName="navigateMoreKeysStyle" />
         </case>
         <case
             latin:navigateNext="true"
             latin:navigatePrevious="true"
         >
             <key-style
-                latin:styleName="navigateMoreKeysStyle"
-                latin:parentStyle="navigateEmojiPreviousNextMoreKeysStyle" />
+                latin:styleName="navigateMoreKeysStyle" />
         </case>
         <case
             latin:navigateNext="true"
         >
             <key-style
-                latin:styleName="navigateMoreKeysStyle"
-                latin:parentStyle="navigateEmojiNextMoreKeysStyle" />
+                latin:styleName="navigateMoreKeysStyle"/>
         </case>
         <case
             latin:navigatePrevious="true"
         >
             <key-style
-                latin:styleName="navigateMoreKeysStyle"
-                latin:parentStyle="navigateEmojiPreviousMoreKeysStyle" />
+                latin:styleName="navigateMoreKeysStyle" />
         </case>
         <default>
             <key-style
-                latin:styleName="navigateMoreKeysStyle"
-                latin:parentStyle="navigateEmojiMoreKeysStyle" />
+                latin:styleName="navigateMoreKeysStyle" />
         </default>
     </switch>
     <!-- Enter key style -->
@@ -252,7 +244,7 @@
         >
             <key-style
                 latin:styleName="enterKeyStyle"
-                latin:parentStyle="emojiKeyStyle" />
+                latin:parentStyle="defaultEnterKeyStyle" />
         </case>
         <case
             latin:imeAction="actionGo"
