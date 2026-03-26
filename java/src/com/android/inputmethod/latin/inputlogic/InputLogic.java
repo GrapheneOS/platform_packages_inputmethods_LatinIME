@@ -18,6 +18,7 @@ package com.android.inputmethod.latin.inputlogic;
 
 import android.graphics.Color;
 import android.os.SystemClock;
+import android.text.InputType;
 import android.text.SpannableString;
 import android.text.Spanned;
 import android.text.TextUtils;
@@ -26,6 +27,7 @@ import android.text.style.SuggestionSpan;
 import android.util.Log;
 import android.view.KeyCharacterMap;
 import android.view.KeyEvent;
+import android.view.View;
 import android.view.inputmethod.CorrectionInfo;
 import android.view.inputmethod.EditorInfo;
 
@@ -1108,14 +1110,18 @@ public final class InputLogic {
                 mConnection.deleteTextBeforeCursor(numCharsDeleted);
                 StatsUtils.onBackspaceSelectedText(numCharsDeleted);
             } else {
+                final boolean isLikelyComposeTextField = isLikelyComposeTextField(
+                        getCurrentInputEditorInfo());
                 // There is no selection, just delete one character.
                 if (inputTransaction.mSettingsValues.isBeforeJellyBean()
                         || inputTransaction.mSettingsValues.mInputAttributes.isTypeNull()
                         || Constants.NOT_A_CURSOR_POSITION
-                                == mConnection.getExpectedSelectionEnd()) {
+                        == mConnection.getExpectedSelectionEnd()
+                        || isLikelyComposeTextField) {
                     // There are three possible reasons to send a key event: either the field has
                     // type TYPE_NULL, in which case the keyboard should send events, or we are
-                    // running in backward compatibility mode, or we don't know the cursor position.
+                    // running in backward compatibility mode, or we don't know the cursor position,
+                    // or we think the field is a Compose TextField (due to a bug with it).
                     // Before Jelly bean, the keyboard would simulate a hardware keyboard event on
                     // pressing enter or delete. This is bad for many reasons (there are race
                     // conditions with commits) but some applications are relying on this behavior
@@ -1124,6 +1130,9 @@ public final class InputLogic {
                     // As for the case where we don't know the cursor position, it can happen
                     // because of bugs in the framework. But the framework should know, so the next
                     // best thing is to leave it to whatever it thinks is best.
+                    // The Compose TextField has a bug where it returns the old state (e.g.,
+                    // it includes the deleted character) when asking it for the text before the
+                    // cursor after backspacing. Sending a key event instead prevents the issue.
                     sendDownUpKeyEvent(KeyEvent.KEYCODE_DEL);
                     int totalDeletedLength = 1;
                     if (mDeleteCount > Constants.DELETE_ACCELERATE_AT) {
@@ -2349,5 +2358,42 @@ public final class InputLogic {
     // never need to know this.
     public int getComposingLength() {
         return mWordComposer.size();
+    }
+
+    /**
+     * Heuristic to determine if the input field is likely a Jetpack Compose TextField by using a
+     * process of elimination to filter out Views, WebViews, websites, custom engines, and rich text
+     * editors.
+     */
+    private boolean isLikelyComposeTextField(final EditorInfo editorInfo) {
+        if (editorInfo == null) {
+            return false;
+        }
+
+        // Compose has a fieldId of View.NO_ID and has null for fieldName, while disconnected input
+        // fields have a fieldId of 0. The uninitialized value for fieldId is also 0 which should
+        // cover custom engines.
+        if (editorInfo.fieldId != View.NO_ID || editorInfo.fieldName != null) {
+            return false;
+        }
+
+        // Checks for WebViews and websites.
+        final int variation = editorInfo.inputType & InputType.TYPE_MASK_VARIATION;
+        if (variation == InputType.TYPE_TEXT_VARIATION_WEB_EDIT_TEXT
+                || variation == InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS
+                || variation == InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD) {
+            return false;
+        }
+
+        // Checks for rich text editors.
+        if (editorInfo.contentMimeTypes != null && editorInfo.contentMimeTypes.length != 0) {
+            return false;
+        }
+
+        if (DebugFlags.DEBUG_ENABLED) {
+            Log.d(TAG, "isLikelyComposeTextField: true (Package: " + editorInfo.packageName + ")");
+        }
+
+        return true;
     }
 }
