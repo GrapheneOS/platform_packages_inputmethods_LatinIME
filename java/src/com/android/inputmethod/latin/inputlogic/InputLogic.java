@@ -2362,8 +2362,7 @@ public final class InputLogic {
 
     /**
      * Heuristic to determine if the input field is likely a Jetpack Compose TextField by using a
-     * process of elimination to filter out Views, WebViews, websites, custom engines, and rich text
-     * editors.
+     * process of elimination to filter out Views, WebViews, websites, and custom engines.
      */
     private boolean isLikelyComposeTextField(final EditorInfo editorInfo) {
         if (editorInfo == null) {
@@ -2382,11 +2381,6 @@ public final class InputLogic {
         if (variation == InputType.TYPE_TEXT_VARIATION_WEB_EDIT_TEXT
                 || variation == InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS
                 || variation == InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD) {
-            return false;
-        }
-
-        // Checks for rich text editors.
-        if (editorInfo.contentMimeTypes != null && editorInfo.contentMimeTypes.length != 0) {
             return false;
         }
 
