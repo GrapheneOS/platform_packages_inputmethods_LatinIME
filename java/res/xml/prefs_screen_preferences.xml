@@ -46,6 +46,12 @@
         android:defaultValue="@bool/config_default_key_preview_popup"
         android:persistent="true" />
     <CheckBoxPreference
+        android:key="show_paste_button"
+        android:summary="@string/prefs_show_paste_button_summary"
+        android:title="@string/prefs_show_paste_button"
+        android:defaultValue="@bool/config_default_show_paste_button"
+        android:persistent="true" />
+    <CheckBoxPreference
         android:key="pref_voice_input_key"
         android:title="@string/voice_input"
         android:defaultValue="true"

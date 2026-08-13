@@ -16,6 +16,7 @@
 
 package com.android.inputmethod.latin;
 
+import static com.android.inputmethod.latin.common.Constants.ImeOption.NO_CLIPBOARD_PASTE;
 import static com.android.inputmethod.latin.common.Constants.ImeOption.NO_FLOATING_GESTURE_PREVIEW;
 import static com.android.inputmethod.latin.common.Constants.ImeOption.NO_MICROPHONE;
 import static com.android.inputmethod.latin.common.Constants.ImeOption.NO_MICROPHONE_COMPAT;
@@ -43,6 +44,7 @@ public final class InputAttributes {
     final public boolean mApplicationSpecifiedCompletionOn;
     final public boolean mShouldInsertSpacesAutomatically;
     final public boolean mShouldShowVoiceInputKey;
+    final public boolean mAllowsClipboardPaste;
     /**
      * Whether the floating gesture preview should be disabled. If true, this should override the
      * corresponding keyboard settings preference, always suppressing the floating preview text.
@@ -59,6 +61,8 @@ public final class InputAttributes {
         mEditorInfo = editorInfo;
         mPackageNameForPrivateImeOptions = packageNameForPrivateImeOptions;
         mTargetApplicationPackageName = null != editorInfo ? editorInfo.packageName : null;
+        mAllowsClipboardPaste = !inPrivateImeOptions(
+                packageNameForPrivateImeOptions, NO_CLIPBOARD_PASTE, editorInfo);
         final int inputType = null != editorInfo ? editorInfo.inputType : 0;
         final int inputClass = inputType & InputType.TYPE_MASK_CLASS;
         mInputType = inputType;

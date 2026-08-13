@@ -31,6 +31,8 @@
         <item name="moreKeysKeyboardViewForActionStyle">@style/MoreKeysKeyboardView.KLP</item>
         <item name="suggestionStripViewStyle">@style/SuggestionStripView.KLP</item>
         <item name="suggestionWordStyle">@style/SuggestionWord.KLP</item>
+        <item name="pasteButtonStyle">@style/PasteButton.KLP</item>
+        <item name="pasteButtonTextStyle">@style/PasteButtonText.KLP</item>
     </style>
     <style
         name="Keyboard.KLP"
@@ -145,6 +147,18 @@
         parent="SuggestionWord"
     >
         <item name="android:background">@drawable/btn_suggestion_klp</item>
+        <item name="android:textColor">@color/highlight_color_klp</item>
+    </style>
+    <style
+        name="PasteButton.KLP"
+        parent="PasteButton"
+    >
+        <item name="android:background">@drawable/btn_paste_holo</item>
+    </style>
+    <style
+        name="PasteButtonText.KLP"
+        parent="PasteButtonText"
+    >
         <item name="android:textColor">@color/highlight_color_klp</item>
     </style>
 </resources>

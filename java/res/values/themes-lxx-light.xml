@@ -30,6 +30,8 @@
         <item name="moreKeysKeyboardViewForActionStyle">@style/MoreKeysKeyboardView.LXX_Light.Action</item>
         <item name="suggestionStripViewStyle">@style/SuggestionStripView.LXX_Light</item>
         <item name="suggestionWordStyle">@style/SuggestionWord.LXX_Light</item>
+        <item name="pasteButtonStyle">@style/PasteButton.LXX_Light</item>
+        <item name="pasteButtonTextStyle">@style/PasteButtonText.LXX_Light</item>
     </style>
     <style
         name="Keyboard.LXX_Light"
@@ -153,5 +155,17 @@
     >
         <item name="android:background">@drawable/btn_suggestion_lxx_light</item>
         <item name="android:textColor">@color/highlight_color_lxx_light</item>
+    </style>
+    <style
+        name="PasteButton.LXX_Light"
+        parent="PasteButton"
+    >
+        <item name="android:background">@drawable/btn_paste_lxx_light</item>
+    </style>
+    <style
+        name="PasteButtonText.LXX_Light"
+        parent="PasteButtonText"
+    >
+        <item name="android:textColor">@color/key_text_color_lxx_light</item>
     </style>
 </resources>

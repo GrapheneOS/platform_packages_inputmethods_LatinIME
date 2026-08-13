@@ -36,6 +36,7 @@ import com.android.inputmethod.latin.RichInputMethodManager;
  * - Vibrate on keypress
  * - Sound on keypress
  * - Popup on keypress
+ * - Show paste button
  * - Voice input key
  */
 public final class PreferencesSettingsFragment extends SubScreenFragment {

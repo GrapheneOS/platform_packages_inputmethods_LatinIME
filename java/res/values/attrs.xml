@@ -40,6 +40,10 @@
         <attr name="suggestionStripViewStyle" format="reference" />
         <!-- Suggestion word style -->
         <attr name="suggestionWordStyle" format="reference" />
+        <!-- Paste button style -->
+        <attr name="pasteButtonStyle" format="reference" />
+        <!-- Paste button text style -->
+        <attr name="pasteButtonTextStyle" format="reference" />
     </declare-styleable>
 
     <declare-styleable name="KeyboardView">

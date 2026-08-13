@@ -76,6 +76,12 @@
     <fraction name="config_min_more_suggestions_width">90%</fraction>
     <dimen name="config_suggestion_min_width">44dp</dimen>
     <dimen name="config_suggestion_text_horizontal_padding">6dp</dimen>
+    <dimen name="config_paste_button_height">28dp</dimen>
+    <dimen name="config_paste_button_horizontal_padding">12dp</dimen>
+    <dimen name="config_paste_button_drawable_padding">8dp</dimen>
+    <dimen name="config_paste_button_icon_size">18dp</dimen>
+    <dimen name="config_paste_button_corner_radius">14dp</dimen>
+    <bool name="config_default_show_paste_button">true</bool>
     <dimen name="config_suggestion_text_size">18dp</dimen>
     <dimen name="config_more_suggestions_hint_text_size">27dp</dimen>
 
