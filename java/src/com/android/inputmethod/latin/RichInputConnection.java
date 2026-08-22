@@ -448,6 +448,16 @@ public final class RichInputConnection implements PrivateCommandPerformer {
                 n, flags);
     }
 
+    public boolean isTextFieldEmpty() {
+        // Cursor position zero alone cannot distinguish an empty field from the start of a
+        // nonempty field, so verify that no text follows the cursor.
+        if (mExpectedSelStart != 0 || mExpectedSelEnd != 0 || hasSlowInputConnection()) {
+            return false;
+        }
+        final CharSequence textAfterCursor = getTextAfterCursor(1, 0 /* flags */);
+        return textAfterCursor != null && textAfterCursor.length() == 0;
+    }
+
     private CharSequence getTextAfterCursorAndDetectLaggyConnection(
             final int operation, final long timeout, final int n, final int flags) {
         mIC = mParent.getCurrentInputConnection();
@@ -505,6 +515,11 @@ public final class RichInputConnection implements PrivateCommandPerformer {
         if (isConnected()) {
             mIC.performEditorAction(actionId);
         }
+    }
+
+    public boolean performContextMenuAction(final int actionId) {
+        mIC = mParent.getCurrentInputConnection();
+        return isConnected() && mIC.performContextMenuAction(actionId);
     }
 
     public void sendKeyEvent(final KeyEvent keyEvent) {

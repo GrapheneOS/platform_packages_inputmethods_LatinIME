@@ -67,6 +67,7 @@ public class SettingsValues {
     public final boolean mSoundOn;
     public final boolean mKeyPreviewPopupOn;
     public final boolean mShowsVoiceInputKey;
+    public final boolean mShowsPasteButton;
     public final boolean mIncludesOtherImesInLanguageSwitchList;
     public final boolean mShowsLanguageSwitchKey;
     public final boolean mUseContactsDict;
@@ -140,6 +141,8 @@ public class SettingsValues {
         mShowsVoiceInputKey = needsToShowVoiceInputKey(prefs, res)
                 && mInputAttributes.mShouldShowVoiceInputKey
                 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN;
+        mShowsPasteButton = prefs.getBoolean(Settings.PREF_SHOW_PASTE_BUTTON,
+                res.getBoolean(R.bool.config_default_show_paste_button));
         mIncludesOtherImesInLanguageSwitchList = Settings.ENABLE_SHOW_LANGUAGE_SWITCH_KEY_SETTINGS
                 ? prefs.getBoolean(Settings.PREF_INCLUDE_OTHER_IMES_IN_LANGUAGE_SWITCH_LIST, false)
                 : true /* forcibly */;
@@ -386,6 +389,8 @@ public class SettingsValues {
         sb.append("" + mKeyPreviewPopupOn);
         sb.append("\n   mShowsVoiceInputKey = ");
         sb.append("" + mShowsVoiceInputKey);
+        sb.append("\n   mShowsPasteButton = ");
+        sb.append("" + mShowsPasteButton);
         sb.append("\n   mIncludesOtherImesInLanguageSwitchList = ");
         sb.append("" + mIncludesOtherImesInLanguageSwitchList);
         sb.append("\n   mShowsLanguageSwitchKey = ");

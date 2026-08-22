@@ -62,6 +62,10 @@
     <string name="spoken_description_space">Space</string>
     <!-- Spoken description for the "Mic" keyboard key. -->
     <string name="spoken_description_mic">Voice input</string>
+    <!-- Spoken description for the button that temporarily replaces suggestions with Paste. -->
+    <string name="spoken_description_show_paste_button">Show paste button</string>
+    <!-- Spoken description for the button that closes the temporary Paste mode. -->
+    <string name="spoken_description_show_suggestions">Show suggestions</string>
     <!-- Spoken description for the "Emoji" keyboard key. -->
     <string name="spoken_description_emoji">Emoji</string>
     <!-- Spoken description for the "Return" keyboard key. -->

@@ -142,6 +142,11 @@
     <!-- Description for show suggestions -->
     <string name="prefs_show_suggestions_summary">Display suggested words while typing</string>
 
+    <!-- Option to show the paste button in the suggestion strip [CHAR LIMIT=30] -->
+    <string name="prefs_show_paste_button">Show paste button</string>
+    <!-- Description for the option to show the paste button [CHAR LIMIT=65] -->
+    <string name="prefs_show_paste_button_summary">Show a button for copied text, images, and other content</string>
+
     <!-- Option to block potentially offensive words to be shown [CHAR_LIMIT=30] -->
     <string name="prefs_block_potentially_offensive_title">Block offensive words</string>
     <!-- Summary for option to block potentially offensive words to be shown [CHAR_LIMIT=80 (two lines) or 40 (fits on one line, preferable)] -->

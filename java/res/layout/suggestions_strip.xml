@@ -52,6 +52,55 @@
             android:textSize="16sp"
             style="?attr/suggestionWordStyle" />
     </LinearLayout>
+    <HorizontalScrollView
+        android:id="@+id/paste_actions"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/config_suggestions_strip_edge_key_width"
+        android:layout_marginEnd="@dimen/config_suggestions_strip_edge_key_width"
+        android:layout_centerVertical="true"
+        android:fillViewport="true"
+        android:overScrollMode="never"
+        android:scrollbars="none">
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:orientation="horizontal">
+            <LinearLayout
+                android:id="@+id/paste_button"
+                android:layout_width="wrap_content"
+                android:layout_height="@dimen/config_paste_button_height"
+                android:contentDescription="@android:string/paste"
+                android:orientation="horizontal"
+                style="?attr/pasteButtonStyle">
+                <ImageView
+                    android:id="@+id/paste_button_icon"
+                    android:layout_width="@dimen/config_paste_button_icon_size"
+                    android:layout_height="@dimen/config_paste_button_icon_size"
+                    android:layout_marginEnd="@dimen/config_paste_button_drawable_padding"
+                    android:duplicateParentState="true"
+                    android:importantForAccessibility="no"
+                    android:src="@drawable/ic_clipboard_paste" />
+                <TextView
+                    android:id="@+id/paste_button_text"
+                    android:text="@android:string/paste"
+                    style="?attr/pasteButtonTextStyle" />
+            </LinearLayout>
+        </LinearLayout>
+    </HorizontalScrollView>
+    <ImageButton
+        android:id="@+id/suggestions_strip_paste_key"
+        android:layout_width="@dimen/config_suggestions_strip_edge_key_width"
+        android:layout_height="fill_parent"
+        android:layout_alignParentStart="true"
+        android:layout_alignParentLeft="true"
+        android:layout_centerVertical="true"
+        android:contentDescription="@string/spoken_description_show_paste_button"
+        android:scaleType="centerInside"
+        android:src="@drawable/ic_clipboard_action"
+        android:visibility="invisible"
+        style="?attr/suggestionWordStyle" />
     <ImageButton
         android:id="@+id/suggestions_strip_voice_key"
         android:layout_width="@dimen/config_suggestions_strip_edge_key_width"

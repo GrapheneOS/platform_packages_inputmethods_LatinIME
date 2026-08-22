@@ -69,6 +69,11 @@ public final class Constants {
          */
         public static final String NO_FLOATING_GESTURE_PREVIEW = "noGestureFloatingPreview";
 
+        /**
+         * The private IME option used to suppress clipboard paste actions for a given text field.
+         */
+        public static final String NO_CLIPBOARD_PASTE = "noClipboardPaste";
+
         private ImeOption() {
             // This utility class is not publicly instantiable.
         }

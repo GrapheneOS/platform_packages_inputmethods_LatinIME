@@ -31,6 +31,8 @@
         <item name="moreKeysKeyboardViewForActionStyle">@style/MoreKeysKeyboardView.ICS</item>
         <item name="suggestionStripViewStyle">@style/SuggestionStripView.ICS</item>
         <item name="suggestionWordStyle">@style/SuggestionWord.ICS</item>
+        <item name="pasteButtonStyle">@style/PasteButton.ICS</item>
+        <item name="pasteButtonTextStyle">@style/PasteButtonText.ICS</item>
     </style>
     <style
         name="Keyboard.ICS"
@@ -145,6 +147,18 @@
         parent="SuggestionWord"
     >
         <item name="android:background">@drawable/btn_suggestion_ics</item>
+        <item name="android:textColor">@color/highlight_color_ics</item>
+    </style>
+    <style
+        name="PasteButton.ICS"
+        parent="PasteButton"
+    >
+        <item name="android:background">@drawable/btn_paste_holo</item>
+    </style>
+    <style
+        name="PasteButtonText.ICS"
+        parent="PasteButtonText"
+    >
         <item name="android:textColor">@color/highlight_color_ics</item>
     </style>
 </resources>
