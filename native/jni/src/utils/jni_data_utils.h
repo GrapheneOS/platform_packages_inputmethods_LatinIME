@@ -104,7 +104,11 @@ class JniDataUtils {
         int prevWordCodePoints[MAX_PREV_WORD_COUNT_FOR_N_GRAM][MAX_WORD_LENGTH];
         int prevWordCodePointCount[MAX_PREV_WORD_COUNT_FOR_N_GRAM];
         bool isBeginningOfSentence[MAX_PREV_WORD_COUNT_FOR_N_GRAM];
-        for (size_t i = 0; i < prevWordCount; ++i) {
+
+        const size_t safePrevWordCount = std::min(
+            static_cast<size_t>(MAX_PREV_WORD_COUNT_FOR_N_GRAM), prevWordCount);
+
+        for (size_t i = 0; i < safePrevWordCount; ++i) {
             prevWordCodePointCount[i] = 0;
             isBeginningOfSentence[i] = false;
             jintArray prevWord = (jintArray)env->GetObjectArrayElement(prevWordCodePointArrays, i);
@@ -124,7 +128,7 @@ class JniDataUtils {
             isBeginningOfSentence[i] = isBeginningOfSentenceBoolean == JNI_TRUE;
         }
         return NgramContext(prevWordCodePoints, prevWordCodePointCount, isBeginningOfSentence,
-                prevWordCount);
+                safePrevWordCount);
     }
 
     static void putBooleanToArray(JNIEnv *env, jbooleanArray array, const int index,
