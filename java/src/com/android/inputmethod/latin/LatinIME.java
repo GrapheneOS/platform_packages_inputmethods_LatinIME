@@ -230,6 +230,8 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
         private static final int ARG1_SHOW_GESTURE_FLOATING_PREVIEW_TEXT = 2;
         private static final int ARG2_UNUSED = 0;
         private static final int ARG1_TRUE = 1;
+        private static final int ARG1_RESUME_NORMAL = 0;
+        private static final int ARG1_RESUME_AFTER_DELETE = 1;
 
         private int mDelayInMillisecondsToUpdateSuggestions;
         private int mDelayInMillisecondsToUpdateShiftState;
@@ -277,6 +279,11 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
                 }
                 break;
             case MSG_RESUME_SUGGESTIONS:
+                if (msg.arg1 == ARG1_RESUME_AFTER_DELETE
+                        && (latinIme.mInputLogic.getComposingLength() > 0
+                                || latinIme.mBatchInputUiActive)) {
+                    break;
+                }
                 latinIme.mInputLogic.restartSuggestionsOnWordTouchedByCursor(
                         latinIme.mSettings.getCurrent(), false /* forStartInput */,
                         latinIme.mKeyboardSwitcher.getCurrentKeyboardScriptId());
@@ -339,7 +346,7 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
         }
 
         private void postResumeSuggestionsInternal(final boolean shouldDelay,
-                final boolean forStartInput) {
+                final boolean forStartInput, final int resumeMode) {
             final LatinIME latinIme = getOwnerInstance();
             if (latinIme == null) {
                 return;
@@ -347,24 +354,35 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
             if (!latinIme.mSettings.getCurrent().isSuggestionsEnabledPerUserSettings()) {
                 return;
             }
-            removeMessages(MSG_RESUME_SUGGESTIONS);
-            removeMessages(MSG_RESUME_SUGGESTIONS_FOR_START_INPUT);
+            cancelResumeSuggestions();
             final int message = forStartInput ? MSG_RESUME_SUGGESTIONS_FOR_START_INPUT
                     : MSG_RESUME_SUGGESTIONS;
             if (shouldDelay) {
-                sendMessageDelayed(obtainMessage(message),
+                sendMessageDelayed(obtainMessage(message, resumeMode, ARG2_UNUSED),
                         mDelayInMillisecondsToUpdateSuggestions);
             } else {
-                sendMessage(obtainMessage(message));
+                sendMessage(obtainMessage(message, resumeMode, ARG2_UNUSED));
             }
         }
 
         public void postResumeSuggestions(final boolean shouldDelay) {
-            postResumeSuggestionsInternal(shouldDelay, false /* forStartInput */);
+            postResumeSuggestionsInternal(shouldDelay, false /* forStartInput */,
+                    ARG1_RESUME_NORMAL);
+        }
+
+        public void postResumeSuggestionsAfterDelete() {
+            postResumeSuggestionsInternal(true /* shouldDelay */, false /* forStartInput */,
+                    ARG1_RESUME_AFTER_DELETE);
         }
 
         public void postResumeSuggestionsForStartInput(final boolean shouldDelay) {
-            postResumeSuggestionsInternal(shouldDelay, true /* forStartInput */);
+            postResumeSuggestionsInternal(shouldDelay, true /* forStartInput */,
+                    ARG1_RESUME_NORMAL);
+        }
+
+        private void cancelResumeSuggestions() {
+            removeMessages(MSG_RESUME_SUGGESTIONS);
+            removeMessages(MSG_RESUME_SUGGESTIONS_FOR_START_INPUT);
         }
 
         public void postResetCaches(final boolean tryResumeSuggestions, final int remainingTries) {
@@ -1152,6 +1170,7 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
         exitBatchInputUi();
         // Remove pending messages related to update suggestions
         mHandler.cancelUpdateSuggestionStrip();
+        mHandler.cancelResumeSuggestions();
         // Should do the following in onFinishInputInternal but until JB MR2 it's not called :(
         mInputLogic.finishInput();
         if (hasSuggestionStripView()) {
