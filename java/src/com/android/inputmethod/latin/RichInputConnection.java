@@ -236,6 +236,11 @@ public final class RichInputConnection implements PrivateCommandPerformer {
         mComposingText.setLength(0);
         final boolean didReloadTextSuccessfully = reloadTextCache();
         if (!didReloadTextSuccessfully) {
+            if (shouldFinishComposition && isConnected()) {
+                // The caller asked to end composition, so the editor span must not outlive our
+                // state even when its text cannot be reloaded.
+                mIC.finishComposingText();
+            }
             Log.d(TAG, "Will try to retrieve text later.");
             return false;
         }
@@ -306,8 +311,11 @@ public final class RichInputConnection implements PrivateCommandPerformer {
         // TODO: the following is exceedingly error-prone. Right now when the cursor is in the
         // middle of the composing word mComposingText only holds the part of the composing text
         // that is before the cursor, so this actually works, but it's terribly confusing. Fix this.
-        mExpectedSelStart += text.length() - mComposingText.length();
-        mExpectedSelEnd = mExpectedSelStart;
+        // Keep an unknown cursor unknown until an absolute position is set again.
+        if (INVALID_CURSOR_POSITION != mExpectedSelStart) {
+            mExpectedSelStart += text.length() - mComposingText.length();
+            mExpectedSelEnd = mExpectedSelStart;
+        }
         mComposingText.setLength(0);
         if (isConnected()) {
             mTempObjectForCommitText.clear();
@@ -495,14 +503,16 @@ public final class RichInputConnection implements PrivateCommandPerformer {
                     + remainingChars, 0);
             mCommittedTextBeforeComposingText.setLength(len);
         }
-        if (mExpectedSelStart > beforeLength) {
-            mExpectedSelStart -= beforeLength;
-            mExpectedSelEnd -= beforeLength;
-        } else {
-            // There are fewer characters before the cursor in the buffer than we are being asked to
-            // delete. Only delete what is there, and update the end with the amount deleted.
-            mExpectedSelEnd -= mExpectedSelStart;
-            mExpectedSelStart = 0;
+        if (INVALID_CURSOR_POSITION != mExpectedSelStart) {
+            if (mExpectedSelStart > beforeLength) {
+                mExpectedSelStart -= beforeLength;
+                mExpectedSelEnd -= beforeLength;
+            } else {
+                // There are fewer characters before the cursor than we are being asked to delete.
+                // Only delete what is there, and update the end with the amount deleted.
+                mExpectedSelEnd -= mExpectedSelStart;
+                mExpectedSelStart = 0;
+            }
         }
         if (isConnected()) {
             mIC.deleteSurroundingText(beforeLength, 0);
@@ -535,8 +545,10 @@ public final class RichInputConnection implements PrivateCommandPerformer {
             switch (keyEvent.getKeyCode()) {
             case KeyEvent.KEYCODE_ENTER:
                 mCommittedTextBeforeComposingText.append("\n");
-                mExpectedSelStart += 1;
-                mExpectedSelEnd = mExpectedSelStart;
+                if (INVALID_CURSOR_POSITION != mExpectedSelStart) {
+                    mExpectedSelStart += 1;
+                    mExpectedSelEnd = mExpectedSelStart;
+                }
                 break;
             case KeyEvent.KEYCODE_DEL:
                 if (0 == mComposingText.length()) {
@@ -557,15 +569,19 @@ public final class RichInputConnection implements PrivateCommandPerformer {
             case KeyEvent.KEYCODE_UNKNOWN:
                 if (null != keyEvent.getCharacters()) {
                     mCommittedTextBeforeComposingText.append(keyEvent.getCharacters());
-                    mExpectedSelStart += keyEvent.getCharacters().length();
-                    mExpectedSelEnd = mExpectedSelStart;
+                    if (INVALID_CURSOR_POSITION != mExpectedSelStart) {
+                        mExpectedSelStart += keyEvent.getCharacters().length();
+                        mExpectedSelEnd = mExpectedSelStart;
+                    }
                 }
                 break;
             default:
                 final String text = StringUtils.newSingleCodePointString(keyEvent.getUnicodeChar());
                 mCommittedTextBeforeComposingText.append(text);
-                mExpectedSelStart += text.length();
-                mExpectedSelEnd = mExpectedSelStart;
+                if (INVALID_CURSOR_POSITION != mExpectedSelStart) {
+                    mExpectedSelStart += text.length();
+                    mExpectedSelEnd = mExpectedSelStart;
+                }
                 break;
             }
         }
@@ -577,9 +593,16 @@ public final class RichInputConnection implements PrivateCommandPerformer {
     public void setComposingRegion(final int start, final int end) {
         if (DEBUG_BATCH_NESTING) checkBatchEdit();
         if (DEBUG_PREVIOUS_TEXT) checkConsistencyForDebug();
-        final CharSequence textBeforeCursor =
-                getTextBeforeCursor(Constants.EDITOR_CONTENTS_CACHE_SIZE + (end - start), 0);
+        final int cachedLength =
+                mCommittedTextBeforeComposingText.length() + mComposingText.length();
+        // Keep the optimistic cache when it covers the composing region before the cursor.
+        // A larger editor read may disagree with edits that we have already sent.
+        final CharSequence textBeforeCursor = INVALID_CURSOR_POSITION != mExpectedSelStart
+                && cachedLength >= mExpectedSelStart - start
+                ? getTextBeforeCursor(cachedLength, 0)
+                : getTextBeforeCursor(Constants.EDITOR_CONTENTS_CACHE_SIZE + (end - start), 0);
         mCommittedTextBeforeComposingText.setLength(0);
+        mComposingText.setLength(0);
         if (!TextUtils.isEmpty(textBeforeCursor)) {
             // The cursor is not necessarily at the end of the composing text, but we have its
             // position in mExpectedSelStart and mExpectedSelEnd. In this case we want the start
@@ -600,8 +623,10 @@ public final class RichInputConnection implements PrivateCommandPerformer {
     public void setComposingText(final CharSequence text, final int newCursorPosition) {
         if (DEBUG_BATCH_NESTING) checkBatchEdit();
         if (DEBUG_PREVIOUS_TEXT) checkConsistencyForDebug();
-        mExpectedSelStart += text.length() - mComposingText.length();
-        mExpectedSelEnd = mExpectedSelStart;
+        if (INVALID_CURSOR_POSITION != mExpectedSelStart) {
+            mExpectedSelStart += text.length() - mComposingText.length();
+            mExpectedSelEnd = mExpectedSelStart;
+        }
         mComposingText.setLength(0);
         mComposingText.append(text);
         // TODO: support values of newCursorPosition != 1. At this time, this is never called with
@@ -658,8 +683,10 @@ public final class RichInputConnection implements PrivateCommandPerformer {
         // text should never be null, but just in case, it's better to insert nothing than to crash
         if (null == text) text = "";
         mCommittedTextBeforeComposingText.append(text);
-        mExpectedSelStart += text.length() - mComposingText.length();
-        mExpectedSelEnd = mExpectedSelStart;
+        if (INVALID_CURSOR_POSITION != mExpectedSelStart) {
+            mExpectedSelStart += text.length() - mComposingText.length();
+            mExpectedSelEnd = mExpectedSelStart;
+        }
         mComposingText.setLength(0);
         if (isConnected()) {
             mIC.commitCompletion(completionInfo);
@@ -744,6 +771,21 @@ public final class RichInputConnection implements PrivateCommandPerformer {
             --startIndexInBefore;
             if (Character.isSupplementaryCodePoint(codePoint)) {
                 --startIndexInBefore;
+            }
+        }
+
+        if (INVALID_CURSOR_POSITION != mExpectedSelStart) {
+            final int cachedLength =
+                    mCommittedTextBeforeComposingText.length() + mComposingText.length();
+            final int overlapLength = Math.min(before.length(), cachedLength);
+            // The whole before-cursor part of the candidate word must be known, and the
+            // editor's text must agree with our optimistic cache. Disagreement can mean that
+            // an edit is still pending, or that the editor has independently changed its text.
+            if (before.length() > mExpectedSelStart
+                    || before.length() - startIndexInBefore > cachedLength
+                    || !TextUtils.regionMatches(before, before.length() - overlapLength,
+                            getTextBeforeCursor(overlapLength, 0), 0, overlapLength)) {
+                return null;
             }
         }
 
@@ -849,7 +891,7 @@ public final class RichInputConnection implements PrivateCommandPerformer {
         final CharSequence textBeforeCursor = getTextBeforeCursor(2, 0);
         // NOTE: This does not work with surrogate pairs. Hopefully when the keyboard is able to
         // enter surrogate pairs this code will have been removed.
-        if (TextUtils.isEmpty(textBeforeCursor)
+        if (null == textBeforeCursor || textBeforeCursor.length() < 2
                 || (Constants.CODE_SPACE != textBeforeCursor.charAt(1))) {
             // We may only come here if the application is changing the text while we are typing.
             // This is quite a broken case, but not logically impossible, so we shouldn't crash,
@@ -886,6 +928,10 @@ public final class RichInputConnection implements PrivateCommandPerformer {
      */
     public boolean isBelatedExpectedUpdate(final int oldSelStart, final int newSelStart,
             final int oldSelEnd, final int newSelEnd) {
+        if (INVALID_CURSOR_POSITION == mExpectedSelStart) {
+            // An unknown position cannot be belated; the callback is authoritative.
+            return false;
+        }
         // This update is "belated" if we are expecting it. That is, mExpectedSelStart and
         // mExpectedSelEnd match the new values that the TextView is updating TO.
         if (mExpectedSelStart == newSelStart && mExpectedSelEnd == newSelEnd) return true;
@@ -991,6 +1037,12 @@ public final class RichInputConnection implements PrivateCommandPerformer {
 
     public int getExpectedSelectionEnd() {
         return mExpectedSelEnd;
+    }
+
+    /** Returns the expected composing start, or an invalid position if the cursor is unknown. */
+    public int getExpectedComposingStart() {
+        return mExpectedSelStart == INVALID_CURSOR_POSITION ? INVALID_CURSOR_POSITION
+                : mExpectedSelStart - mComposingText.length();
     }
 
     /**

@@ -27,14 +27,11 @@ import android.text.SpannableStringBuilder;
 import android.text.style.CharacterStyle;
 import android.text.style.SuggestionSpan;
 import android.util.Log;
-import android.view.LayoutInflater;
 import android.view.View;
-import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
 import android.view.inputmethod.InputMethodSubtype;
 import android.widget.EditText;
-import android.widget.FrameLayout;
 
 import com.android.inputmethod.compat.InputMethodSubtypeCompatUtils;
 import com.android.inputmethod.event.Event;
@@ -193,6 +190,10 @@ public class InputTestsBase extends ServiceTestCase<LatinIMEForTests> {
         return ei;
     }
 
+    protected InputConnection enrichInputConnection(final InputConnection ic) {
+        return ic;
+    }
+
     @Override
     protected void setUp() throws Exception {
         super.setUp();
@@ -214,16 +215,12 @@ public class InputTestsBase extends ServiceTestCase<LatinIMEForTests> {
                 DEFAULT_AUTO_CORRECTION, DEFAULT_AUTO_CORRECTION);
         mLatinIME.onCreate();
         EditorInfo ei = new EditorInfo();
-        final InputConnection ic = mEditText.onCreateInputConnection(ei);
-        final LayoutInflater inflater =
-                (LayoutInflater)getContext().getSystemService(Context.LAYOUT_INFLATER_SERVICE);
-        final ViewGroup vg = new FrameLayout(getContext());
-        mInputView = inflater.inflate(R.layout.input_view, vg);
+        final InputConnection ic = enrichInputConnection(mEditText.onCreateInputConnection(ei));
         ei = enrichEditorInfo(ei);
         mLatinIME.onCreateInputMethodInterface().startInput(ic, ei);
+        mInputView = mLatinIME.onCreateInputView();
         mLatinIME.setInputView(mInputView);
         mLatinIME.onBindInput();
-        mLatinIME.onCreateInputView();
         mLatinIME.onStartInputView(ei, false);
         mInputConnection = ic;
         changeLanguage("en_US");

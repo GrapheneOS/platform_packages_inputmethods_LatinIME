@@ -405,12 +405,23 @@ public final class InputLogic {
                         NgramContext.EMPTY_PREV_WORDS_INFO);
             }
         } else {
-            // resetEntireInputState calls resetCachesUponCursorMove, but forcing the
-            // composition to end. But in all cases where we don't reset the entire input
-            // state, we still want to tell the rich input connection about the new cursor
-            // position so that it can update its caches.
-            mConnection.resetCachesUponCursorMoveAndReturnSuccess(
-                    newSelStart, newSelEnd, false /* shouldFinishComposition */);
+            // Refresh the caches for the new cursor position. If composition survives the
+            // move, rebuild the committed/composing split that the cache reset clears.
+            if (mWordComposer.isComposingWord()) {
+                final int composingStart = mConnection.getExpectedComposingStart();
+                final int composingEnd = composingStart >= 0
+                        ? composingStart + mWordComposer.getTypedWord().length()
+                        : Constants.NOT_A_CURSOR_POSITION;
+                if (!mConnection.resetCachesUponCursorMoveAndReturnSuccess(
+                        newSelStart, newSelEnd, false /* shouldFinishComposition */)
+                        || !restoreComposingRegionAndReturnSuccess(
+                                composingStart, composingEnd, newSelStart)) {
+                    resetEntireInputState(newSelStart, newSelEnd, false /* clearSuggestionStrip */);
+                }
+            } else {
+                mConnection.resetCachesUponCursorMoveAndReturnSuccess(
+                        newSelStart, newSelEnd, false /* shouldFinishComposition */);
+            }
         }
 
         // The cursor has been moved : we now accept to perform recapitalization
@@ -1094,6 +1105,8 @@ public final class InputLogic {
 
             // No cancelling of commit/double space/swap: we have a regular backspace.
             // We should backspace one char and restart suggestion if at the end of a word.
+            final boolean isLikelyComposeTextField = isLikelyComposeTextField(
+                    getCurrentInputEditorInfo());
             if (mConnection.hasSelection()) {
                 // If there is a selection, remove it.
                 // We also need to unlearn the selected text.
@@ -1110,8 +1123,6 @@ public final class InputLogic {
                 mConnection.deleteTextBeforeCursor(numCharsDeleted);
                 StatsUtils.onBackspaceSelectedText(numCharsDeleted);
             } else {
-                final boolean isLikelyComposeTextField = isLikelyComposeTextField(
-                        getCurrentInputEditorInfo());
                 // There is no selection, just delete one character.
                 if (inputTransaction.mSettingsValues.isBeforeJellyBean()
                         || inputTransaction.mSettingsValues.mInputAttributes.isTypeNull()
@@ -1192,8 +1203,12 @@ public final class InputLogic {
                             .mCurrentLanguageHasSpaces
                     && !mConnection.isCursorFollowedByWordCharacter(
                             inputTransaction.mSettingsValues.mSpacingAndPunctuations)) {
-                restartSuggestionsOnWordTouchedByCursor(inputTransaction.mSettingsValues,
-                        false /* forStartInput */, currentKeyboardScriptId);
+                if (isLikelyComposeTextField) {
+                    mLatinIME.mHandler.postResumeSuggestionsAfterDelete();
+                } else {
+                    restartSuggestionsOnWordTouchedByCursor(inputTransaction.mSettingsValues,
+                            false /* forStartInput */, currentKeyboardScriptId);
+                }
             }
         }
     }
@@ -1545,8 +1560,9 @@ public final class InputLogic {
             return;
         }
         final int expectedCursorPosition = mConnection.getExpectedSelectionStart();
-        if (!mConnection.isCursorTouchingWord(settingsValues.mSpacingAndPunctuations,
-                    true /* checkTextAfter */)) {
+        if (!mWordComposer.isComposingWord()
+                && !mConnection.isCursorTouchingWord(settingsValues.mSpacingAndPunctuations,
+                        true /* checkTextAfter */)) {
             // Show predictions.
             mWordComposer.setCapitalizedModeAtStartComposingTime(WordComposer.CAPS_MODE_OFF);
             mLatinIME.mHandler.postUpdateSuggestionStrip(SuggestedWords.INPUT_STYLE_RECORRECTION);
@@ -1898,6 +1914,17 @@ public final class InputLogic {
                 shouldFinishComposition);
     }
 
+    private boolean restoreComposingRegionAndReturnSuccess(final int composingStart,
+            final int composingEnd, final int cursorPosition) {
+        if (composingStart < 0 || composingEnd < composingStart
+                || cursorPosition < composingStart || cursorPosition > composingEnd) {
+            return false;
+        }
+        mConnection.setComposingRegion(composingStart, composingEnd);
+        // A short editor response may not contain the entire composing prefix.
+        return mConnection.getExpectedComposingStart() == composingStart;
+    }
+
     /**
      * Resets only the composing state.
      *
@@ -2233,9 +2260,24 @@ public final class InputLogic {
             final int remainingTries, final LatinIME.UIHandler handler) {
         final boolean shouldFinishComposition = mConnection.hasSelection()
                 || !mConnection.isCursorPositionKnown();
-        if (!mConnection.resetCachesUponCursorMoveAndReturnSuccess(
-                mConnection.getExpectedSelectionStart(), mConnection.getExpectedSelectionEnd(),
-                shouldFinishComposition)) {
+        final boolean shouldPreserveComposition = mWordComposer.isComposingWord()
+                && !shouldFinishComposition;
+        final int expectedSelStart = mConnection.getExpectedSelectionStart();
+        final int expectedSelEnd = mConnection.getExpectedSelectionEnd();
+        final int composingStart = shouldPreserveComposition
+                ? mConnection.getExpectedComposingStart() : Constants.NOT_A_CURSOR_POSITION;
+        final int composingEnd = composingStart >= 0
+                ? composingStart + mWordComposer.getTypedWord().length()
+                : Constants.NOT_A_CURSOR_POSITION;
+        final boolean didResetCaches = mConnection.resetCachesUponCursorMoveAndReturnSuccess(
+                expectedSelStart, expectedSelEnd, shouldFinishComposition);
+        if (!didResetCaches) {
+            if (mWordComposer.isComposingWord()) {
+                // A failed reset may leave the editor's composing span behind, so retire the whole
+                // input state instead of only the composer.
+                resetEntireInputState(expectedSelStart, expectedSelEnd,
+                        false /* clearSuggestionStrip */);
+            }
             if (0 < remainingTries) {
                 handler.postResetCaches(tryResumeSuggestions, remainingTries - 1);
                 return false;
@@ -2243,7 +2285,20 @@ public final class InputLogic {
             // If remainingTries is 0, we should stop waiting for new tries, however we'll still
             // return true as we need to perform other tasks (for example, loading the keyboard).
         }
+        if (didResetCaches && shouldFinishComposition && mWordComposer.isComposingWord()) {
+            resetComposingState(true /* alsoResetLastComposedWord */);
+        }
         mConnection.tryFixLyingCursorPosition();
+        if (didResetCaches && shouldPreserveComposition) {
+            final int currentSelStart = mConnection.getExpectedSelectionStart();
+            final int currentSelEnd = mConnection.getExpectedSelectionEnd();
+            if (currentSelStart != expectedSelStart || currentSelEnd != expectedSelEnd
+                    || !restoreComposingRegionAndReturnSuccess(
+                            composingStart, composingEnd, currentSelStart)) {
+                resetEntireInputState(currentSelStart, currentSelEnd,
+                        false /* clearSuggestionStrip */);
+            }
+        }
         if (tryResumeSuggestions) {
             handler.postResumeSuggestions(true /* shouldDelay */);
         }

@@ -18,14 +18,20 @@ package com.android.inputmethod.latin;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import android.content.res.Resources;
 import android.inputmethodservice.InputMethodService;
 import android.os.Parcel;
 import android.text.SpannableString;
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
 import android.text.TextUtils;
 import android.text.style.SuggestionSpan;
+import android.view.KeyEvent;
+import android.view.inputmethod.CompletionInfo;
 import android.view.inputmethod.ExtractedText;
 import android.view.inputmethod.ExtractedTextRequest;
 import android.view.inputmethod.InputConnection;
@@ -146,6 +152,133 @@ public class RichInputConnectionAndTextRangeTests {
         }
     }
 
+    private class LaggingConnection extends MockConnection {
+        final SpannableStringBuilder mText;
+        int mCursorPosition;
+        int mPendingDeleteLength;
+        int mMaxCharsToReturn = Integer.MAX_VALUE;
+        int mBeforeCursorReads;
+        boolean mReturnNullBeforeCursor;
+        int mNullBeforeCursorReads;
+        int mComposingStart = -1;
+        int mComposingEnd = -1;
+
+        LaggingConnection(final CharSequence text, final int cursorPosition) {
+            super(text, cursorPosition);
+            mText = new SpannableStringBuilder(text);
+            mCursorPosition = cursorPosition;
+        }
+
+        @Override
+        public int cursorPos() {
+            return mCursorPosition;
+        }
+
+        @Override
+        public CharSequence getTextBeforeCursor(final int n, final int flags) {
+            ++mBeforeCursorReads;
+            if (mReturnNullBeforeCursor) {
+                ++mNullBeforeCursorReads;
+                return null;
+            }
+            final int length = Math.min(n, mMaxCharsToReturn);
+            return parcelText(mText.subSequence(
+                    Math.max(0, mCursorPosition - length), mCursorPosition));
+        }
+
+        @Override
+        public CharSequence getTextAfterCursor(final int n, final int flags) {
+            return parcelText(mText.subSequence(
+                    mCursorPosition, Math.min(mText.length(), mCursorPosition + n)));
+        }
+
+        private CharSequence parcelText(final CharSequence text) {
+            // Each IPC response contains its own instances of the parcelled suggestion spans.
+            final Parcel parcel = Parcel.obtain();
+            TextUtils.writeToParcel(text, parcel, 0);
+            parcel.setDataPosition(0);
+            final CharSequence result = TextUtils.CHAR_SEQUENCE_CREATOR.createFromParcel(parcel);
+            parcel.recycle();
+            return result;
+        }
+
+        @Override
+        public boolean deleteSurroundingText(final int beforeLength, final int afterLength) {
+            assertEquals(0, afterLength);
+            mPendingDeleteLength += beforeLength;
+            return true;
+        }
+
+        @Override
+        public boolean sendKeyEvent(final KeyEvent event) {
+            assertEquals(KeyEvent.KEYCODE_DEL, event.getKeyCode());
+            if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                ++mPendingDeleteLength;
+            }
+            return true;
+        }
+
+        void applyPendingDeletes() {
+            mText.delete(mCursorPosition - mPendingDeleteLength, mCursorPosition);
+            mCursorPosition -= mPendingDeleteLength;
+            mPendingDeleteLength = 0;
+        }
+
+        @Override
+        public boolean setComposingRegion(final int start, final int end) {
+            mComposingStart = start;
+            mComposingEnd = end;
+            return true;
+        }
+
+        @Override
+        public boolean setComposingText(final CharSequence text, final int newCursorPosition) {
+            return true;
+        }
+    }
+
+    private class RecordingConnection extends LaggingConnection {
+        int mCommitTextCalls;
+        int mSetComposingTextCalls;
+        int mCommitCompletionCalls;
+        int mSentKeyEvents;
+        String mLastText;
+
+        RecordingConnection(final CharSequence text, final int cursorPosition) {
+            super(text, cursorPosition);
+        }
+
+        @Override
+        public boolean commitText(final CharSequence text, final int newCursorPosition) {
+            ++mCommitTextCalls;
+            mLastText = text.toString();
+            return true;
+        }
+
+        @Override
+        public boolean setComposingText(final CharSequence text, final int newCursorPosition) {
+            ++mSetComposingTextCalls;
+            mLastText = text.toString();
+            return super.setComposingText(text, newCursorPosition);
+        }
+
+        @Override
+        public boolean commitCompletion(final CompletionInfo completion) {
+            ++mCommitCompletionCalls;
+            mLastText = completion.getText().toString();
+            return true;
+        }
+
+        @Override
+        public boolean sendKeyEvent(final KeyEvent event) {
+            ++mSentKeyEvents;
+            if (event.getKeyCode() == KeyEvent.KEYCODE_DEL) {
+                return super.sendKeyEvent(event);
+            }
+            return true;
+        }
+    }
+
     static class MockInputMethodService extends InputMethodService {
         private MockConnection mMockConnection;
         public void setInputConnection(final MockConnection mockConnection) {
@@ -161,6 +294,360 @@ public class RichInputConnectionAndTextRangeTests {
     }
 
     /************************** Tests ************************/
+
+    private RichInputConnection createCachedConnection(final LaggingConnection connection) {
+        final MockInputMethodService ims = new MockInputMethodService();
+        ims.setInputConnection(connection);
+        final RichInputConnection ic = new RichInputConnection(ims);
+        assertTrue(ic.resetCachesUponCursorMoveAndReturnSuccess(
+                connection.cursorPos(), connection.cursorPos(), false /* shouldFinishComposition */));
+        return ic;
+    }
+
+    private void assertExpectedSelection(final RichInputConnection ic,
+            final int start, final int end) {
+        assertEquals("expected selection start", start, ic.getExpectedSelectionStart());
+        assertEquals("expected selection end", end, ic.getExpectedSelectionEnd());
+    }
+
+    private RichInputConnection createConnectionWithFailedReload(
+            final LaggingConnection connection) {
+        final RichInputConnection ic = createCachedConnection(connection);
+        connection.mReturnNullBeforeCursor = true;
+        assertFalse(ic.resetCachesUponCursorMoveAndReturnSuccess(
+                connection.cursorPos(), connection.cursorPos(),
+                false /* shouldFinishComposition */));
+        assertEquals(2, connection.mBeforeCursorReads);
+        assertEquals(1, connection.mNullBeforeCursorReads);
+        assertExpectedSelection(ic, -1, -1);
+        connection.mReturnNullBeforeCursor = false;
+        return ic;
+    }
+
+    @Test
+    public void testCommitTextPreservesUnknownCursor() {
+        final RecordingConnection connection = new RecordingConnection("alpha echo", 10);
+        final RichInputConnection ic = createConnectionWithFailedReload(connection);
+        ic.commitText(" s", 1);
+        assertEquals(1, connection.mCommitTextCalls);
+        assertEquals(" s", connection.mLastText);
+        assertEquals('s', ic.getCodePointBeforeCursor());
+        assertExpectedSelection(ic, -1, -1);
+    }
+
+    @Test
+    public void testSetComposingTextPreservesUnknownCursor() {
+        final RecordingConnection connection = new RecordingConnection("alpha echo", 10);
+        final RichInputConnection ic = createConnectionWithFailedReload(connection);
+        ic.setComposingText("st", 1);
+        assertEquals(1, connection.mSetComposingTextCalls);
+        assertEquals("st", connection.mLastText);
+        assertExpectedSelection(ic, -1, -1);
+        ic.setComposingText("s", 1);
+        assertEquals(2, connection.mSetComposingTextCalls);
+        assertEquals("s", connection.mLastText);
+        assertExpectedSelection(ic, -1, -1);
+    }
+
+    @Test
+    public void testCommitCompletionPreservesUnknownCursor() {
+        final RecordingConnection connection = new RecordingConnection("alpha echo", 10);
+        final RichInputConnection ic = createConnectionWithFailedReload(connection);
+        ic.commitCompletion(new CompletionInfo(1, 0, "test"));
+        assertEquals(1, connection.mCommitCompletionCalls);
+        assertEquals("test", connection.mLastText);
+        assertEquals('t', ic.getCodePointBeforeCursor());
+        assertExpectedSelection(ic, -1, -1);
+    }
+
+    @Test
+    public void testDeleteTextBeforeCursorPreservesUnknownCursor() {
+        for (final int length : new int[] { 1, 20 }) {
+            final LaggingConnection connection = new LaggingConnection("alpha echo", 10);
+            final RichInputConnection ic = createConnectionWithFailedReload(connection);
+            ic.deleteTextBeforeCursor(length);
+            assertEquals(length, connection.mPendingDeleteLength);
+            assertExpectedSelection(ic, -1, -1);
+        }
+    }
+
+    private void assertKeyPreservesUnknownCursor(final KeyEvent event) {
+        final RecordingConnection connection = new RecordingConnection("alpha echo", 10);
+        final RichInputConnection ic = createConnectionWithFailedReload(connection);
+        ic.sendKeyEvent(event);
+        assertEquals(1, connection.mSentKeyEvents);
+        assertExpectedSelection(ic, -1, -1);
+    }
+
+    private KeyEvent charactersKeyDown() throws Exception {
+        // The public character constructor forces ACTION_MULTIPLE. Use the framework factory
+        // to exercise RIC's legacy ACTION_DOWN branch without losing the character payload.
+        return (KeyEvent)KeyEvent.class.getMethod("obtain", long.class, long.class,
+                int.class, int.class, int.class, int.class, int.class, int.class,
+                int.class, int.class, String.class).invoke(null,
+                        0L, 0L, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_UNKNOWN, 0, 0, 0, 0, 0, 0,
+                        "xy");
+    }
+
+    @Test
+    public void testEnterKeyPreservesUnknownCursor() {
+        assertKeyPreservesUnknownCursor(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER));
+    }
+
+    @Test
+    public void testCharactersKeyPreservesUnknownCursor() throws Exception {
+        final KeyEvent event = charactersKeyDown();
+        assertEquals(KeyEvent.KEYCODE_UNKNOWN, event.getKeyCode());
+        assertEquals(KeyEvent.ACTION_DOWN, event.getAction());
+        assertEquals("xy", event.getCharacters());
+        assertKeyPreservesUnknownCursor(event);
+    }
+
+    @Test
+    public void testDefaultKeyPreservesUnknownCursor() {
+        assertKeyPreservesUnknownCursor(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_A));
+    }
+
+    @Test
+    public void testDeleteAndKeyUpPreserveUnknownCursor() {
+        assertKeyPreservesUnknownCursor(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DEL));
+        assertKeyPreservesUnknownCursor(new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER));
+    }
+
+    @Test
+    public void testTextMutationsAdvanceKnownCursor() {
+        final RecordingConnection connection = new RecordingConnection("alpha echo", 10);
+        final RichInputConnection ic = createCachedConnection(connection);
+        ic.setComposingText("ab", 1);
+        assertExpectedSelection(ic, 12, 12);
+        ic.setComposingText("a", 1);
+        assertExpectedSelection(ic, 11, 11);
+        ic.commitText("cat", 1);
+        assertExpectedSelection(ic, 13, 13);
+        ic.setComposingText("xy", 1);
+        ic.commitCompletion(new CompletionInfo(1, 0, "dog"));
+        assertExpectedSelection(ic, 16, 16);
+        assertEquals("alpha echocatdog", ic.getTextBeforeCursor(16, 0).toString());
+        ic.deleteTextBeforeCursor(3);
+        assertExpectedSelection(ic, 13, 13);
+        assertEquals("alpha echocat", ic.getTextBeforeCursor(13, 0).toString());
+        ic.deleteTextBeforeCursor(20);
+        assertExpectedSelection(ic, 0, 0);
+        assertEquals("", ic.getTextBeforeCursor(1, 0).toString());
+        assertEquals(1, connection.mCommitTextCalls);
+        assertEquals(3, connection.mSetComposingTextCalls);
+        assertEquals(1, connection.mCommitCompletionCalls);
+        assertEquals(23, connection.mPendingDeleteLength);
+    }
+
+    @Test
+    public void testDeleteBeforeKnownSelectionPreservesSelectionLength() {
+        final LaggingConnection connection = new LaggingConnection("alpha echo", 10);
+        final RichInputConnection ic = createCachedConnection(connection);
+        assertTrue(ic.resetCachesUponCursorMoveAndReturnSuccess(10, 12, false));
+        ic.deleteTextBeforeCursor(2);
+        assertExpectedSelection(ic, 8, 10);
+        ic.deleteTextBeforeCursor(20);
+        assertExpectedSelection(ic, 0, 2);
+    }
+
+    @Test
+    public void testKeyEventsAdvanceKnownCursor() throws Exception {
+        final RecordingConnection connection = new RecordingConnection("alpha echo", 10);
+        final RichInputConnection ic = createCachedConnection(connection);
+        ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER));
+        assertExpectedSelection(ic, 11, 11);
+        ic.sendKeyEvent(charactersKeyDown());
+        assertExpectedSelection(ic, 13, 13);
+        ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_A));
+        assertExpectedSelection(ic, 14, 14);
+        ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_A));
+        assertExpectedSelection(ic, 14, 14);
+        ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DEL));
+        assertExpectedSelection(ic, 13, 13);
+        assertEquals("alpha echo\nxy", ic.getTextBeforeCursor(13, 0).toString());
+        assertEquals(5, connection.mSentKeyEvents);
+        assertEquals(1, connection.mPendingDeleteLength);
+    }
+
+    @Test
+    public void testUnknownCursorNeverTreatsSelectionUpdateAsBelated() {
+        final LaggingConnection connection = new LaggingConnection("alpha echo", 10);
+        final RichInputConnection ic = createConnectionWithFailedReload(connection);
+        assertFalse(ic.isBelatedExpectedUpdate(10, 9, 10, 9));
+        assertFalse(ic.isBelatedExpectedUpdate(10, 10, 10, 10));
+        assertFalse(ic.isBelatedExpectedUpdate(10, -1, 10, -1));
+    }
+
+    @Test
+    public void testKnownCursorDetectsBelatedSelectionUpdates() {
+        final LaggingConnection connection = new LaggingConnection("alpha echo", 10);
+        final RichInputConnection ic = createCachedConnection(connection);
+        assertTrue(ic.isBelatedExpectedUpdate(8, 10, 8, 10));
+        assertTrue(ic.isBelatedExpectedUpdate(10, 10, 10, 10));
+        assertTrue(ic.isBelatedExpectedUpdate(6, 8, 6, 8));
+        assertTrue(ic.isBelatedExpectedUpdate(12, 11, 12, 11));
+        assertFalse(ic.isBelatedExpectedUpdate(10, 9, 10, 9));
+        assertFalse(ic.isBelatedExpectedUpdate(6, 11, 6, 11));
+        assertFalse(ic.isBelatedExpectedUpdate(6, 8, 6, 9));
+    }
+
+    @Test
+    public void testRevertSwapPunctuationRejectsOneCharacterRead() {
+        final RecordingConnection connection = new RecordingConnection(". ", 2);
+        connection.mMaxCharsToReturn = 1;
+        final RichInputConnection ic = createCachedConnection(connection);
+        assertFalse(ic.revertSwapPunctuation());
+        assertEquals(2, connection.mBeforeCursorReads);
+        assertEquals(0, connection.mCommitTextCalls);
+        assertEquals(0, connection.mPendingDeleteLength);
+        assertEquals(". ", connection.mText.toString());
+        assertExpectedSelection(ic, 2, 2);
+    }
+
+    @Test
+    public void testWordRangeRejectsPendingDeleteThenAcceptsAppliedDelete() {
+        final String text = "alpha bravo charlie delta echo";
+        final LaggingConnection connection = new LaggingConnection(text, text.length());
+        final RichInputConnection ic = createCachedConnection(connection);
+        ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DEL));
+        ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DEL));
+        assertNull(ic.getWordRangeAtCursor(mSpacingAndPunctuations, ScriptUtils.SCRIPT_LATIN));
+        assertEquals(text.length() - 1, ic.getExpectedSelectionStart());
+
+        connection.applyPendingDeletes();
+        final TextRange range = ic.getWordRangeAtCursor(
+                mSpacingAndPunctuations, ScriptUtils.SCRIPT_LATIN);
+        assertNotNull(range);
+        assertEquals("ech", range.mWord.toString());
+        final int cursor = ic.getExpectedSelectionStart();
+        ic.setComposingRegion(cursor - range.getNumberOfCharsInWordBeforeCursor(), cursor);
+        assertEquals(text.indexOf("echo"), connection.mComposingStart);
+        assertEquals(cursor, connection.mComposingEnd);
+        ic.setComposingText("ec", 1);
+        assertEquals("alpha bravo charlie delta ec",
+                ic.getTextBeforeCursor(text.length(), 0).toString());
+    }
+
+    @Test
+    public void testWordRangeRejectsTextLongerThanExpectedCursorWithMatchingSuffix() {
+        final LaggingConnection connection = new LaggingConnection("   ", 3);
+        final RichInputConnection ic = createCachedConnection(connection);
+        ic.deleteTextBeforeCursor(1);
+        assertNull(ic.getWordRangeAtCursor(mSpacingAndPunctuations, ScriptUtils.SCRIPT_LATIN));
+    }
+
+    @Test
+    public void testWordRangeRequiresWholeBeforeCursorWordInCache() {
+        final String text = "abcdefghij";
+        final LaggingConnection connection = new LaggingConnection(text, text.length());
+        connection.mMaxCharsToReturn = 3;
+        final RichInputConnection ic = createCachedConnection(connection);
+        connection.mMaxCharsToReturn = Integer.MAX_VALUE;
+        assertNull(ic.getWordRangeAtCursor(mSpacingAndPunctuations, ScriptUtils.SCRIPT_LATIN));
+    }
+
+    @Test
+    public void testWordRangeChecksCachedPrefixAsWellAsCandidateWord() {
+        final LaggingConnection connection = new LaggingConnection("alpha echo", 10);
+        final RichInputConnection ic = createCachedConnection(connection);
+        connection.mText.replace(0, 5, "bravo");
+        assertNull(ic.getWordRangeAtCursor(mSpacingAndPunctuations, ScriptUtils.SCRIPT_LATIN));
+    }
+
+    @Test
+    public void testWordRangeAfterSupplementaryCharacterDelete() {
+        final String text = "alpha echo\uD83D\uDE07";
+        final LaggingConnection connection = new LaggingConnection(text, text.length());
+        final RichInputConnection ic = createCachedConnection(connection);
+        ic.deleteTextBeforeCursor(2);
+        assertNull(ic.getWordRangeAtCursor(mSpacingAndPunctuations, ScriptUtils.SCRIPT_LATIN));
+        connection.applyPendingDeletes();
+        final TextRange range = ic.getWordRangeAtCursor(
+                mSpacingAndPunctuations, ScriptUtils.SCRIPT_LATIN);
+        assertNotNull(range);
+        assertEquals("echo", range.mWord.toString());
+        assertEquals(4, range.getNumberOfCharsInWordBeforeCursor());
+    }
+
+    @Test
+    public void testKnownCachePreservesRecorrectionSpansAndRepeatedComposingRegion() {
+        final SpannableString text = new SpannableString("prefix echo suffix");
+        text.setSpan(new SuggestionSpan(Locale.ENGLISH, new String[] { "each" }, 0),
+                7, 11, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        final LaggingConnection connection = new LaggingConnection(text, 9);
+        final RichInputConnection ic = createCachedConnection(connection);
+        final TextRange range = ic.getWordRangeAtCursor(
+                mSpacingAndPunctuations, ScriptUtils.SCRIPT_LATIN);
+        assertNotNull(range);
+        assertEquals("echo", range.mWord.toString());
+        assertEquals(2, range.getNumberOfCharsInWordBeforeCursor());
+        assertEquals(2, range.getNumberOfCharsInWordAfterCursor());
+        assertEquals(1, range.getSuggestionSpansAtWord().length);
+        assertEquals("each", range.getSuggestionSpansAtWord()[0].getSuggestions()[0]);
+
+        final int reads = connection.mBeforeCursorReads;
+        ic.setComposingRegion(7, 11);
+        ic.setComposingRegion(7, 11);
+        assertEquals(reads, connection.mBeforeCursorReads);
+        assertEquals("prefix ec", ic.getTextBeforeCursor(9, 0).toString());
+        ic.setComposingText("echoes", 1);
+        assertEquals(13, ic.getExpectedSelectionStart());
+        assertEquals("prefix echoes", ic.getTextBeforeCursor(13, 0).toString());
+    }
+
+    @Test
+    public void testComposingRegionKeepsLongOptimisticCacheAfterAmbiguousRead() {
+        final StringBuilder text = new StringBuilder();
+        for (int i = 0; i < 200; ++i) {
+            text.append("prefix ");
+        }
+        final StringBuilder word = new StringBuilder();
+        for (int i = 0; i < 41; ++i) {
+            word.append('a');
+        }
+        text.append(word);
+        final LaggingConnection connection = new LaggingConnection(text, text.length());
+        final RichInputConnection ic = createCachedConnection(connection);
+        ic.deleteTextBeforeCursor(1);
+        // The stale 40-character response is identical to the optimistic suffix. A second,
+        // larger read would include the pending deletion and shift the cached word boundary.
+        final TextRange range = ic.getWordRangeAtCursor(
+                mSpacingAndPunctuations, ScriptUtils.SCRIPT_LATIN);
+        assertNotNull(range);
+        assertEquals(40, range.getNumberOfCharsInWordBeforeCursor());
+        final int reads = connection.mBeforeCursorReads;
+        final int cursor = ic.getExpectedSelectionStart();
+        ic.setComposingRegion(cursor - 40, cursor);
+        assertEquals(reads, connection.mBeforeCursorReads);
+        final int cachedLength = Constants.EDITOR_CONTENTS_CACHE_SIZE - 1;
+        assertEquals(text.substring(text.length() - Constants.EDITOR_CONTENTS_CACHE_SIZE,
+                        text.length() - 1),
+                ic.getTextBeforeCursor(cachedLength, 0).toString());
+        assertEquals(Constants.CODE_SPACE, ic.getCodePointBeforeCursor());
+
+        ic.setComposingRegion(cursor - 40, cursor);
+        word.setLength(39);
+        ic.setComposingText(word, 1);
+        assertEquals(cursor - 1, ic.getExpectedSelectionStart());
+        assertEquals(reads, connection.mBeforeCursorReads);
+        assertEquals(text.substring(text.length() - Constants.EDITOR_CONTENTS_CACHE_SIZE,
+                        text.length() - 2),
+                ic.getTextBeforeCursor(cachedLength - 1, 0).toString());
+    }
+
+    @Test
+    public void testComposingRegionReadsEditorWhenCacheDoesNotCoverRegion() {
+        final String text = "abcdefghij";
+        final LaggingConnection connection = new LaggingConnection(text, text.length());
+        connection.mMaxCharsToReturn = 3;
+        final RichInputConnection ic = createCachedConnection(connection);
+        connection.mMaxCharsToReturn = Integer.MAX_VALUE;
+        final int reads = connection.mBeforeCursorReads;
+        ic.setComposingRegion(0, text.length());
+        assertEquals(reads + 1, connection.mBeforeCursorReads);
+        assertEquals(text, ic.getTextBeforeCursor(text.length(), 0).toString());
+    }
 
     /**
      * Test for getting previous word (for bigram suggestions)
