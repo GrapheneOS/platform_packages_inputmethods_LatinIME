@@ -231,7 +231,7 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
         private static final int ARG2_UNUSED = 0;
         private static final int ARG1_TRUE = 1;
         private static final int ARG1_RESUME_NORMAL = 0;
-        private static final int ARG1_RESUME_AFTER_DELETE = 1;
+        private static final int ARG1_RESUME_AFTER_EDITOR_UPDATE = 1;
 
         private int mDelayInMillisecondsToUpdateSuggestions;
         private int mDelayInMillisecondsToUpdateShiftState;
@@ -279,9 +279,11 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
                 }
                 break;
             case MSG_RESUME_SUGGESTIONS:
-                if (msg.arg1 == ARG1_RESUME_AFTER_DELETE
-                        && (latinIme.mInputLogic.getComposingLength() > 0
-                                || latinIme.mBatchInputUiActive)) {
+                if (msg.arg1 == ARG1_RESUME_AFTER_EDITOR_UPDATE) {
+                    latinIme.mInputLogic.tryRestartSuggestionsAfterEditorUpdate(
+                            latinIme.mSettings.getCurrent(),
+                            switcher.getCurrentKeyboardScriptId(),
+                            (InputLogic.PendingSuggestionsRestart)msg.obj);
                     break;
                 }
                 latinIme.mInputLogic.restartSuggestionsOnWordTouchedByCursor(
@@ -346,7 +348,8 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
         }
 
         private void postResumeSuggestionsInternal(final boolean shouldDelay,
-                final boolean forStartInput, final int resumeMode) {
+                final boolean forStartInput, final int resumeMode,
+                final InputLogic.PendingSuggestionsRestart request) {
             final LatinIME latinIme = getOwnerInstance();
             if (latinIme == null) {
                 return;
@@ -354,33 +357,41 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
             if (!latinIme.mSettings.getCurrent().isSuggestionsEnabledPerUserSettings()) {
                 return;
             }
-            cancelResumeSuggestions();
+            if (resumeMode == ARG1_RESUME_NORMAL) {
+                cancelResumeSuggestions();
+            }
             final int message = forStartInput ? MSG_RESUME_SUGGESTIONS_FOR_START_INPUT
                     : MSG_RESUME_SUGGESTIONS;
             if (shouldDelay) {
-                sendMessageDelayed(obtainMessage(message, resumeMode, ARG2_UNUSED),
+                sendMessageDelayed(obtainMessage(message, resumeMode, ARG2_UNUSED, request),
                         mDelayInMillisecondsToUpdateSuggestions);
             } else {
-                sendMessage(obtainMessage(message, resumeMode, ARG2_UNUSED));
+                sendMessage(obtainMessage(message, resumeMode, ARG2_UNUSED, request));
             }
         }
 
         public void postResumeSuggestions(final boolean shouldDelay) {
             postResumeSuggestionsInternal(shouldDelay, false /* forStartInput */,
-                    ARG1_RESUME_NORMAL);
+                    ARG1_RESUME_NORMAL, null);
         }
 
-        public void postResumeSuggestionsAfterDelete() {
+        public void postResumeSuggestionsAfterEditorUpdate(
+                final InputLogic.PendingSuggestionsRestart request) {
             postResumeSuggestionsInternal(true /* shouldDelay */, false /* forStartInput */,
-                    ARG1_RESUME_AFTER_DELETE);
+                    ARG1_RESUME_AFTER_EDITOR_UPDATE, request);
+        }
+
+        public void cancelResumeSuggestionsAfterEditorUpdate(
+                final InputLogic.PendingSuggestionsRestart request) {
+            removeMessages(MSG_RESUME_SUGGESTIONS, request);
         }
 
         public void postResumeSuggestionsForStartInput(final boolean shouldDelay) {
             postResumeSuggestionsInternal(shouldDelay, true /* forStartInput */,
-                    ARG1_RESUME_NORMAL);
+                    ARG1_RESUME_NORMAL, null);
         }
 
-        private void cancelResumeSuggestions() {
+        public void cancelResumeSuggestions() {
             removeMessages(MSG_RESUME_SUGGESTIONS);
             removeMessages(MSG_RESUME_SUGGESTIONS_FOR_START_INPUT);
         }
@@ -1202,7 +1213,8 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
         boolean cursorMovedByUser = false;
         if (isInputViewShown()) {
             cursorMovedByUser = mInputLogic.onUpdateSelection(
-                    oldSelStart, oldSelEnd, newSelStart, newSelEnd, settingsValues);
+                    oldSelStart, oldSelEnd, newSelStart, newSelEnd, settingsValues,
+                    mKeyboardSwitcher.getCurrentKeyboardScriptId());
             if (cursorMovedByUser) {
                 mKeyboardSwitcher.requestUpdatingShiftState(getCurrentAutoCapsState(),
                         getCurrentRecapitalizeState());
@@ -1572,6 +1584,7 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
 
     @Override
     public boolean onPaste() {
+        mInputLogic.cancelPendingSuggestionsRestart();
         // The standard Paste action lets the platform grant the focused app clipboard access and
         // preserves its receive content behavior without exposing the clip to LatinIME.
         return mInputLogic.mConnection.performContextMenuAction(android.R.id.paste);
@@ -1580,6 +1593,10 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
     @Override
     public boolean isTextFieldEmpty() {
         return mInputLogic.mConnection.isTextFieldEmpty();
+    }
+
+    public boolean isBatchInputUiActive() {
+        return mBatchInputUiActive;
     }
 
     @Override

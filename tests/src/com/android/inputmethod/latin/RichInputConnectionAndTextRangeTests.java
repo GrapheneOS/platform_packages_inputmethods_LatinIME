@@ -505,6 +505,47 @@ public class RichInputConnectionAndTextRangeTests {
         assertExpectedSelection(ic, 2, 2);
     }
 
+    private void assertWordRangeStatus(final RichInputConnection ic,
+            final RichInputConnection.WordRangeStatus status) {
+        final RichInputConnection.WordRangeResult result = ic.getWordRangeAtCursorResult(
+                mSpacingAndPunctuations, ScriptUtils.SCRIPT_LATIN);
+        assertEquals(status, result.status);
+        assertEquals(status == RichInputConnection.WordRangeStatus.FOUND, result.range != null);
+    }
+
+    @Test
+    public void testWordRangeResultClassifiesEveryCacheGuard() {
+        final LaggingConnection tooLong = new LaggingConnection("   ", 3);
+        final RichInputConnection lengthCache = createCachedConnection(tooLong);
+        lengthCache.deleteTextBeforeCursor(1);
+        assertWordRangeStatus(lengthCache, RichInputConnection.WordRangeStatus.CACHE_REJECTED);
+
+        final LaggingConnection partial = new LaggingConnection("abcdefghij", 10);
+        partial.mMaxCharsToReturn = 3;
+        final RichInputConnection partialCache = createCachedConnection(partial);
+        partial.mMaxCharsToReturn = Integer.MAX_VALUE;
+        assertWordRangeStatus(partialCache, RichInputConnection.WordRangeStatus.CACHE_REJECTED);
+
+        final LaggingConnection changed = new LaggingConnection("alpha echo", 10);
+        final RichInputConnection changedCache = createCachedConnection(changed);
+        changed.mText.replace(0, 5, "bravo");
+        assertWordRangeStatus(changedCache, RichInputConnection.WordRangeStatus.CACHE_REJECTED);
+        changed.mText.replace(0, 5, "alpha");
+        assertWordRangeStatus(changedCache, RichInputConnection.WordRangeStatus.FOUND);
+    }
+
+    @Test
+    public void testWordRangeResultClassifiesUnavailableReads() {
+        final MockInputMethodService ims = new MockInputMethodService();
+        final RichInputConnection ic = new RichInputConnection(ims);
+        assertWordRangeStatus(ic, RichInputConnection.WordRangeStatus.UNAVAILABLE);
+        ims.setInputConnection(new MockConnection(null, "after", null));
+        assertWordRangeStatus(ic, RichInputConnection.WordRangeStatus.UNAVAILABLE);
+        ims.setInputConnection(new MockConnection("before", null, null));
+        assertWordRangeStatus(ic, RichInputConnection.WordRangeStatus.UNAVAILABLE);
+        assertNull(ic.getWordRangeAtCursor(mSpacingAndPunctuations, ScriptUtils.SCRIPT_LATIN));
+    }
+
     @Test
     public void testWordRangeRejectsPendingDeleteThenAcceptsAppliedDelete() {
         final String text = "alpha bravo charlie delta echo";
