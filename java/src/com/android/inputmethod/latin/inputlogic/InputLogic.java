@@ -67,6 +67,7 @@ import java.util.TreeSet;
 import java.util.concurrent.TimeUnit;
 
 import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 
 /**
  * This class manages the input logic.
@@ -94,6 +95,17 @@ public final class InputLogic {
     /* package */ final WordComposer mWordComposer;
     public final RichInputConnection mConnection;
     private final RecapitalizeStatus mRecapitalizeStatus = new RecapitalizeStatus();
+
+    public static final class PendingSuggestionsRestart {
+        private final int cursor;
+
+        private PendingSuggestionsRestart(final int cursor) {
+            this.cursor = cursor;
+        }
+    }
+
+    // Owned by the UI thread; worker posts only change the handler queue.
+    @Nullable private PendingSuggestionsRestart mPendingSuggestionsRestart;
 
     private int mDeleteCount;
     private long mLastKeyTime;
@@ -139,6 +151,7 @@ public final class InputLogic {
      * @param settingsValues the current settings values
      */
     public void startInput(final String combiningSpec, final SettingsValues settingsValues) {
+        cancelPendingSuggestionsRestart();
         mEnteredText = null;
         mWordBeingCorrectedByCursor = null;
         mConnection.onStartInput();
@@ -187,6 +200,7 @@ public final class InputLogic {
      * @param settingsValues the current values of the settings.
      */
     public void onOrientationChange(final SettingsValues settingsValues) {
+        cancelPendingSuggestionsRestart();
         // If !isComposingWord, #commitTyped() is a no-op, but still, it's better to avoid
         // the useless IPC of {begin,end}BatchEdit.
         if (mWordComposer.isComposingWord()) {
@@ -203,6 +217,7 @@ public final class InputLogic {
      * Clean up the input logic after input is finished.
      */
     public void finishInput() {
+        cancelPendingSuggestionsRestart();
         if (mWordComposer.isComposingWord()) {
             mConnection.finishComposingText();
             StatsUtils.onWordCommitUserTyped(
@@ -235,6 +250,7 @@ public final class InputLogic {
      */
     public InputTransaction onTextInput(final SettingsValues settingsValues, final Event event,
             final int keyboardShiftMode, final LatinIME.UIHandler handler) {
+        cancelPendingSuggestionsRestart();
         final String rawText = event.getTextToCommit().toString();
         final InputTransaction inputTransaction = new InputTransaction(settingsValues, event,
                 SystemClock.uptimeMillis(), mSpaceState,
@@ -275,6 +291,7 @@ public final class InputLogic {
     public InputTransaction onPickSuggestionManually(final SettingsValues settingsValues,
             final SuggestedWordInfo suggestionInfo, final int keyboardShiftState,
             final int currentKeyboardScriptId, final LatinIME.UIHandler handler) {
+        cancelPendingSuggestionsRestart();
         final SuggestedWords suggestedWords = mSuggestedWords;
         final String suggestion = suggestionInfo.mWord;
         // If this is a punctuation picked from the suggestion strip, pass it to onCodeInput
@@ -353,10 +370,22 @@ public final class InputLogic {
      * @return whether the cursor has moved as a result of user interaction.
      */
     public boolean onUpdateSelection(final int oldSelStart, final int oldSelEnd,
-            final int newSelStart, final int newSelEnd, final SettingsValues settingsValues) {
+            final int newSelStart, final int newSelEnd, final SettingsValues settingsValues,
+            final int currentKeyboardScriptId) {
         if (mConnection.isBelatedExpectedUpdate(oldSelStart, newSelStart, oldSelEnd, newSelEnd)) {
+            final PendingSuggestionsRestart request = mPendingSuggestionsRestart;
+            if (request != null) {
+                if (request.cursor != mConnection.getExpectedSelectionStart()
+                        || request.cursor != mConnection.getExpectedSelectionEnd()) {
+                    cancelPendingSuggestionsRestart();
+                } else if (newSelStart == request.cursor && newSelEnd == request.cursor) {
+                    tryRestartSuggestionsAfterEditorUpdate(
+                            settingsValues, currentKeyboardScriptId, request);
+                }
+            }
             return false;
         }
+        cancelPendingSuggestionsRestart();
         // TODO: the following is probably better done in resetEntireInputState().
         // it should only happen when the cursor moved, and the very purpose of the
         // test below is to narrow down whether this happened or not. Likewise with
@@ -450,6 +479,7 @@ public final class InputLogic {
     public InputTransaction onCodeInput(final SettingsValues settingsValues,
             @Nonnull final Event event, final int keyboardShiftMode,
             final int currentKeyboardScriptId, final LatinIME.UIHandler handler) {
+        cancelPendingSuggestionsRestart();
         mWordBeingCorrectedByCursor = null;
         final Event processedEvent = mWordComposer.processEvent(event);
         final InputTransaction inputTransaction = new InputTransaction(settingsValues,
@@ -505,6 +535,7 @@ public final class InputLogic {
 
     public void onStartBatchInput(final SettingsValues settingsValues,
             final KeyboardSwitcher keyboardSwitcher, final LatinIME.UIHandler handler) {
+        cancelPendingSuggestionsRestart();
         mWordBeingCorrectedByCursor = null;
         mInputLogicHandler.onStartBatchInput();
         handler.showGesturePreviewAndSuggestionStrip(
@@ -1204,7 +1235,10 @@ public final class InputLogic {
                     && !mConnection.isCursorFollowedByWordCharacter(
                             inputTransaction.mSettingsValues.mSpacingAndPunctuations)) {
                 if (isLikelyComposeTextField) {
-                    mLatinIME.mHandler.postResumeSuggestionsAfterDelete();
+                    final int cursor = mConnection.getExpectedSelectionStart();
+                    if (canRestartSuggestionsAfterEditorUpdate(cursor)) {
+                        armPendingSuggestionsRestart(cursor);
+                    }
                 } else {
                     restartSuggestionsOnWordTouchedByCursor(inputTransaction.mSettingsValues,
                             false /* forStartInput */, currentKeyboardScriptId);
@@ -1536,7 +1570,61 @@ public final class InputLogic {
      *   around only when we come here at input start time.
      */
     public void restartSuggestionsOnWordTouchedByCursor(final SettingsValues settingsValues,
-            final boolean forStartInput,
+            final boolean forStartInput, final int currentKeyboardScriptId) {
+        cancelPendingSuggestionsRestart();
+        final int expectedStart = mConnection.getExpectedSelectionStart();
+        final int expectedEnd = mConnection.getExpectedSelectionEnd();
+        final RestartResult result = restartSuggestionsOnWordTouchedByCursorInternal(
+                settingsValues, forStartInput, currentKeyboardScriptId);
+        if (result == RestartResult.CACHE_REJECTED && expectedStart == expectedEnd
+                && canRestartSuggestionsAfterEditorUpdate(expectedStart)) {
+            armPendingSuggestionsRestart(expectedStart);
+        }
+    }
+
+    public void cancelPendingSuggestionsRestart() {
+        final PendingSuggestionsRestart request = mPendingSuggestionsRestart;
+        mPendingSuggestionsRestart = null;
+        if (request != null) {
+            mLatinIME.mHandler.cancelResumeSuggestionsAfterEditorUpdate(request);
+        }
+    }
+
+    private void armPendingSuggestionsRestart(final int cursor) {
+        cancelPendingSuggestionsRestart();
+        mLatinIME.mHandler.cancelResumeSuggestions();
+        final PendingSuggestionsRestart request = new PendingSuggestionsRestart(cursor);
+        mPendingSuggestionsRestart = request;
+        mLatinIME.mHandler.postResumeSuggestionsAfterEditorUpdate(request);
+    }
+
+    private boolean canRestartSuggestionsAfterEditorUpdate(final int cursor) {
+        return cursor >= 0 && mConnection.getExpectedSelectionStart() == cursor
+                && mConnection.getExpectedSelectionEnd() == cursor
+                && !mWordComposer.isComposingWord() && !mConnection.hasComposingText()
+                && !mInputLogicHandler.isInBatchInput() && !mLatinIME.isBatchInputUiActive();
+    }
+
+    public void tryRestartSuggestionsAfterEditorUpdate(final SettingsValues settingsValues,
+            final int currentKeyboardScriptId, final PendingSuggestionsRestart request) {
+        if (request == null || request != mPendingSuggestionsRestart) {
+            return;
+        }
+        if (!canRestartSuggestionsAfterEditorUpdate(request.cursor)) {
+            cancelPendingSuggestionsRestart();
+            return;
+        }
+        final RestartResult result = restartSuggestionsOnWordTouchedByCursorInternal(
+                settingsValues, false /* forStartInput */, currentKeyboardScriptId);
+        if (result == RestartResult.RESUMED || result == RestartResult.SKIPPED) {
+            cancelPendingSuggestionsRestart();
+        }
+    }
+
+    private enum RestartResult {RESUMED, SKIPPED, CACHE_REJECTED, UNAVAILABLE}
+
+    private RestartResult restartSuggestionsOnWordTouchedByCursorInternal(
+            final SettingsValues settingsValues, final boolean forStartInput,
             // TODO: remove this argument, put it into settingsValues
             final int currentKeyboardScriptId) {
         // HACK: We may want to special-case some apps that exhibit bad behavior in case of
@@ -1557,7 +1645,7 @@ public final class InputLogic {
         // If we don't know the cursor location, return.
                 || mConnection.getExpectedSelectionStart() < 0) {
             mSuggestionStripViewAccessor.setNeutralSuggestionStrip();
-            return;
+            return RestartResult.SKIPPED;
         }
         final int expectedCursorPosition = mConnection.getExpectedSelectionStart();
         if (!mWordComposer.isComposingWord()
@@ -1566,24 +1654,32 @@ public final class InputLogic {
             // Show predictions.
             mWordComposer.setCapitalizedModeAtStartComposingTime(WordComposer.CAPS_MODE_OFF);
             mLatinIME.mHandler.postUpdateSuggestionStrip(SuggestedWords.INPUT_STYLE_RECORRECTION);
-            return;
+            return RestartResult.SKIPPED;
         }
-        final TextRange range = mConnection.getWordRangeAtCursor(
-                settingsValues.mSpacingAndPunctuations, currentKeyboardScriptId);
-        if (null == range) return; // Happens if we don't have an input connection at all
+        final RichInputConnection.WordRangeResult wordRange =
+                mConnection.getWordRangeAtCursorResult(
+                        settingsValues.mSpacingAndPunctuations, currentKeyboardScriptId);
+        if (wordRange.status == RichInputConnection.WordRangeStatus.CACHE_REJECTED) {
+            return RestartResult.CACHE_REJECTED;
+        }
+        if (wordRange.status == RichInputConnection.WordRangeStatus.UNAVAILABLE) {
+            return RestartResult.UNAVAILABLE;
+        }
+        final TextRange range = wordRange.range;
         if (range.length() <= 0) {
             // Race condition, or touching a word in a non-supported script.
             mLatinIME.setNeutralSuggestionStrip();
-            return;
+            return RestartResult.SKIPPED;
         }
         // If for some strange reason (editor bug or so) we measure the text before the cursor as
         // longer than what the entire text is supposed to be, the safe thing to do is bail out.
-        if (range.mHasUrlSpans) return; // If there are links, we don't resume suggestions. Making
+        // If there are links, we don't resume suggestions. Making
         // edits to a linkified text through batch commands would ruin the URL spans, and unless
         // we take very complicated steps to preserve the whole link, we can't do things right so
         // we just do not resume because it's safer.
+        if (range.mHasUrlSpans) return RestartResult.SKIPPED;
         final int numberOfCharsInWordBeforeCursor = range.getNumberOfCharsInWordBeforeCursor();
-        if (numberOfCharsInWordBeforeCursor > expectedCursorPosition) return;
+        if (numberOfCharsInWordBeforeCursor > expectedCursorPosition) return RestartResult.SKIPPED;
         final ArrayList<SuggestedWordInfo> suggestions = new ArrayList<>();
         final String typedWordString = range.mWord.toString();
         final SuggestedWordInfo typedWordInfo = new SuggestedWordInfo(typedWordString,
@@ -1594,7 +1690,7 @@ public final class InputLogic {
         suggestions.add(typedWordInfo);
         if (!isResumableWord(settingsValues, typedWordString)) {
             mSuggestionStripViewAccessor.setNeutralSuggestionStrip();
-            return;
+            return RestartResult.SKIPPED;
         }
         int i = 0;
         for (final SuggestionSpan span : range.getSuggestionSpansAtWord()) {
@@ -1641,6 +1737,7 @@ public final class InputLogic {
                     SuggestedWords.INPUT_STYLE_RECORRECTION, SuggestedWords.NOT_A_SEQUENCE_NUMBER);
             doShowSuggestionsAndClearAutoCorrectionIndicator(suggestedWords);
         }
+        return RestartResult.RESUMED;
     }
 
     void doShowSuggestionsAndClearAutoCorrectionIndicator(final SuggestedWords suggestedWords) {
@@ -1905,6 +2002,7 @@ public final class InputLogic {
     // TODO: how is this different from startInput ?!
     private void resetEntireInputState(final int newSelStart, final int newSelEnd,
             final boolean clearSuggestionStrip) {
+        cancelPendingSuggestionsRestart();
         final boolean shouldFinishComposition = mWordComposer.isComposingWord();
         resetComposingState(true /* alsoResetLastComposedWord */);
         if (clearSuggestionStrip) {
@@ -2258,6 +2356,7 @@ public final class InputLogic {
      */
     public boolean retryResetCachesAndReturnSuccess(final boolean tryResumeSuggestions,
             final int remainingTries, final LatinIME.UIHandler handler) {
+        cancelPendingSuggestionsRestart();
         final boolean shouldFinishComposition = mConnection.hasSelection()
                 || !mConnection.isCursorPositionKnown();
         final boolean shouldPreserveComposition = mWordComposer.isComposingWord()

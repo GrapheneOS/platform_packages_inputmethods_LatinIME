@@ -277,6 +277,10 @@ public final class RichInputConnection implements PrivateCommandPerformer {
         return true;
     }
 
+    public boolean hasComposingText() {
+        return mComposingText.length() != 0;
+    }
+
     private void checkBatchEdit() {
         if (mNestLevel != 1) {
             // TODO: exception instead
@@ -741,11 +745,37 @@ public final class RichInputConnection implements PrivateCommandPerformer {
      * @param scriptId the script we consider to be writing words, as one of ScriptUtils.SCRIPT_*
      * @return a range containing the text surrounding the cursor
      */
+    @Nullable
     public TextRange getWordRangeAtCursor(final SpacingAndPunctuations spacingAndPunctuations,
             final int scriptId) {
+        return getWordRangeAtCursorResult(spacingAndPunctuations, scriptId).range;
+    }
+
+    public enum WordRangeStatus {FOUND, CACHE_REJECTED, UNAVAILABLE}
+
+    public static final class WordRangeResult {
+        public final WordRangeStatus status;
+        @Nullable public final TextRange range;
+
+        private WordRangeResult(final WordRangeStatus status, @Nullable final TextRange range) {
+            if ((status == WordRangeStatus.FOUND) != (range != null)) {
+                throw new IllegalArgumentException("Only FOUND has a word range");
+            }
+            this.status = status;
+            this.range = range;
+        }
+    }
+
+    private static final WordRangeResult WORD_RANGE_CACHE_REJECTED =
+            new WordRangeResult(WordRangeStatus.CACHE_REJECTED, null);
+    private static final WordRangeResult WORD_RANGE_UNAVAILABLE =
+            new WordRangeResult(WordRangeStatus.UNAVAILABLE, null);
+
+    public WordRangeResult getWordRangeAtCursorResult(
+            final SpacingAndPunctuations spacingAndPunctuations, final int scriptId) {
         mIC = mParent.getCurrentInputConnection();
         if (!isConnected()) {
-            return null;
+            return WORD_RANGE_UNAVAILABLE;
         }
         final CharSequence before = getTextBeforeCursorAndDetectLaggyConnection(
                 OPERATION_GET_WORD_RANGE_AT_CURSOR,
@@ -758,7 +788,7 @@ public final class RichInputConnection implements PrivateCommandPerformer {
                 NUM_CHARS_TO_GET_AFTER_CURSOR,
                 InputConnection.GET_TEXT_WITH_STYLES);
         if (before == null || after == null) {
-            return null;
+            return WORD_RANGE_UNAVAILABLE;
         }
 
         // Going backward, find the first breaking point (separator)
@@ -785,7 +815,7 @@ public final class RichInputConnection implements PrivateCommandPerformer {
                     || before.length() - startIndexInBefore > cachedLength
                     || !TextUtils.regionMatches(before, before.length() - overlapLength,
                             getTextBeforeCursor(overlapLength, 0), 0, overlapLength)) {
-                return null;
+                return WORD_RANGE_CACHE_REJECTED;
             }
         }
 
@@ -807,10 +837,10 @@ public final class RichInputConnection implements PrivateCommandPerformer {
         // We don't use TextUtils#concat because it copies all spans without respect to their
         // nature. If the text includes a PARAGRAPH span and it has been split, then
         // TextUtils#concat will crash when it tries to concat both sides of it.
-        return new TextRange(
+        return new WordRangeResult(WordRangeStatus.FOUND, new TextRange(
                 SpannableStringUtils.concatWithNonParagraphSuggestionSpansOnly(before, after),
                         startIndexInBefore, before.length() + endIndexInAfter, before.length(),
-                        hasUrlSpans);
+                        hasUrlSpans));
     }
 
     public boolean isCursorTouchingWord(final SpacingAndPunctuations spacingAndPunctuations,
